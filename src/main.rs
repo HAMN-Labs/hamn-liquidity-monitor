@@ -5,7 +5,7 @@ mod sequences;
 mod validation;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use features::extractor::{
     LiquidityEventKind, NormalizationProfile, extract_features_with_stats,
     normalize_feature_with_profile,
@@ -18,6 +18,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tokio::time::sleep;
 
 #[derive(Debug, Parser)]
@@ -116,6 +117,15 @@ struct Cli {
     #[arg(long, default_value_t = 10)]
     topic0_top_n: usize,
 
+    #[arg(long, default_value_t = 100)]
+    heartbeat_interval_blocks: u64,
+
+    #[arg(long, default_value_t = 0)]
+    snapshot_interval_blocks: u64,
+
+    #[arg(long, value_enum, default_value_t = ErrorMode::FailSoft)]
+    error_mode: ErrorMode,
+
     #[arg(long, default_value_t = false)]
     run_validation_set: bool,
 
@@ -127,6 +137,12 @@ struct Cli {
 
     #[arg(long, default_value_t = 0.8)]
     validation_min_recall: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ErrorMode {
+    FailSoft,
+    FailFast,
 }
 
 #[derive(Debug)]
@@ -254,6 +270,11 @@ async fn main() -> Result<()> {
 
     let queue_capacity = cli.pipeline_queue_capacity.max(1);
     let (tx, rx) = mpsc::channel::<PipelineMessage>(queue_capacity);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        let _ = shutdown_tx.send(true);
+    });
 
     let should_extract = cli.extract_features || cli.enable_memory || cli.enable_sequences;
     let normalization = NormalizationProfile {
@@ -261,6 +282,8 @@ async fn main() -> Result<()> {
         token1_decimals: cli.token1_decimals,
     };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
+    let periodic_snapshot_path = cli.memory_snapshot_out.clone();
+    let snapshot_interval_blocks = cli.snapshot_interval_blocks;
     let consumer_handle = tokio::spawn(async move {
         consume_pipeline(
             rx,
@@ -269,15 +292,22 @@ async fn main() -> Result<()> {
             should_extract,
             smoothing_alpha,
             normalization,
+            periodic_snapshot_path,
+            snapshot_interval_blocks,
         )
         .await
     });
 
     let runtime_started = Instant::now();
     let mut producer_stats = ProducerStats::default();
+    let mut heartbeat_blocks = 0u64;
 
     let mut next_block = cli.start_block;
     loop {
+        if *shutdown_rx.borrow() {
+            println!("shutdown_signal_received stage=producer");
+            break;
+        }
         if next_block > end_block {
             break;
         }
@@ -288,7 +318,13 @@ async fn main() -> Result<()> {
                 Err(err) => {
                     producer_stats.rpc_errors = producer_stats.rpc_errors.saturating_add(1);
                     eprintln!("latest_block_error error={err}");
-                    sleep(Duration::from_millis(cli.poll_interval_ms)).await;
+                    tokio::select! {
+                        _ = sleep(Duration::from_millis(cli.poll_interval_ms)) => {},
+                        _ = wait_for_shutdown_change(&shutdown_rx) => {
+                            println!("shutdown_signal_received stage=producer_poll_wait");
+                            break;
+                        }
+                    }
                     continue;
                 }
             }
@@ -297,11 +333,21 @@ async fn main() -> Result<()> {
         };
 
         if next_block > target_end {
-            sleep(Duration::from_millis(cli.poll_interval_ms)).await;
+            tokio::select! {
+                _ = sleep(Duration::from_millis(cli.poll_interval_ms)) => {},
+                _ = wait_for_shutdown_change(&shutdown_rx) => {
+                    println!("shutdown_signal_received stage=producer_idle_wait");
+                    break;
+                }
+            }
             continue;
         }
 
         while next_block <= target_end {
+            if *shutdown_rx.borrow() {
+                println!("shutdown_signal_received stage=producer_block_loop");
+                break;
+            }
             let block_lag = target_end.saturating_sub(next_block);
             ingest_block_to_pipeline(
                 &rpc,
@@ -310,8 +356,26 @@ async fn main() -> Result<()> {
                 block_lag,
                 &tx,
                 &mut producer_stats,
+                cli.error_mode,
             )
             .await?;
+            heartbeat_blocks = heartbeat_blocks.saturating_add(1);
+            if cli.follow
+                && cli.heartbeat_interval_blocks > 0
+                && heartbeat_blocks % cli.heartbeat_interval_blocks == 0
+            {
+                println!(
+                    "heartbeat block={} target_end={} lag={} blocks_processed={} receipts_enqueued={} rpc_errors={} queue_capacity={} error_mode={:?}",
+                    next_block,
+                    target_end,
+                    block_lag,
+                    producer_stats.blocks_processed,
+                    producer_stats.receipts_enqueued,
+                    producer_stats.rpc_errors,
+                    queue_capacity,
+                    cli.error_mode
+                );
+            }
             next_block += 1;
         }
 
@@ -348,6 +412,7 @@ async fn ingest_block_to_pipeline(
     block_lag: u64,
     tx: &mpsc::Sender<PipelineMessage>,
     stats: &mut ProducerStats,
+    error_mode: ErrorMode,
 ) -> Result<()> {
     let block_started = Instant::now();
     let block = match rpc.get_block_by_number(block_number, cli.full_tx).await {
@@ -355,6 +420,9 @@ async fn ingest_block_to_pipeline(
         Err(err) => {
             stats.rpc_errors = stats.rpc_errors.saturating_add(1);
             eprintln!("block_fetch_error block={} error={}", block_number, err);
+            if error_mode == ErrorMode::FailFast {
+                return Err(err).context("fail-fast: block fetch error");
+            }
             return Ok(());
         }
     };
@@ -433,6 +501,9 @@ async fn ingest_block_to_pipeline(
             Err(err) => {
                 stats.rpc_errors = stats.rpc_errors.saturating_add(1);
                 eprintln!("logs_fetch_error block={} error={}", block_number, err);
+                if error_mode == ErrorMode::FailFast {
+                    return Err(err).context("fail-fast: logs fetch error");
+                }
             }
         }
     }
@@ -446,6 +517,9 @@ async fn ingest_block_to_pipeline(
                 Err(err) => {
                     stats.rpc_errors = stats.rpc_errors.saturating_add(1);
                     eprintln!("receipt_fetch_error tx={} error={}", tx_hash, err);
+                    if error_mode == ErrorMode::FailFast {
+                        return Err(err).context("fail-fast: receipt fetch error");
+                    }
                     continue;
                 }
             };
@@ -499,6 +573,8 @@ async fn consume_pipeline(
     should_extract_features: bool,
     smoothing_alpha: f64,
     normalization: NormalizationProfile,
+    periodic_snapshot_path: Option<String>,
+    snapshot_interval_blocks: u64,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
 
@@ -636,6 +712,25 @@ async fn consume_pipeline(
                         add_to_remove,
                     );
                 }
+
+                if snapshot_interval_blocks > 0
+                    && block_number % snapshot_interval_blocks == 0
+                    && periodic_snapshot_path.is_some()
+                {
+                    if let (Some(memory), Some(path)) =
+                        (memory.as_ref(), periodic_snapshot_path.as_ref())
+                    {
+                        memory
+                            .save_snapshot(path)
+                            .with_context(|| format!("failed periodic snapshot at block={block_number}"))?;
+                        println!(
+                            "memory_snapshot_saved mode=periodic block={} path={} patterns={}",
+                            block_number,
+                            path,
+                            memory.pattern_count()
+                        );
+                    }
+                }
             }
         }
     }
@@ -750,5 +845,14 @@ fn print_topic0_summary(producer: &ProducerStats, top_n: usize) {
             count,
             topic
         );
+    }
+}
+
+async fn wait_for_shutdown_change(shutdown_rx: &watch::Receiver<bool>) {
+    let mut rx = shutdown_rx.clone();
+    while !*rx.borrow() {
+        if rx.changed().await.is_err() {
+            break;
+        }
     }
 }

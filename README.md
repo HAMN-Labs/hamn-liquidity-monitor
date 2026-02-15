@@ -135,6 +135,20 @@ cargo run -- \
   --pipeline-queue-capacity 4
 ```
 
+```bash
+# Runtime hardening controls (heartbeat/snapshots/error mode)
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --end-block 359066952 \
+  --follow \
+  --fetch-logs \
+  --enable-memory \
+  --heartbeat-interval-blocks 10 \
+  --snapshot-interval-blocks 100 \
+  --memory-snapshot-out memory_snapshot.json \
+  --error-mode fail-soft
+```
+
 ## Documentation
 - User guide (English): `docs/USER_GUIDE.md`
 - CLI reference (English): `docs/CLI_REFERENCE.md`

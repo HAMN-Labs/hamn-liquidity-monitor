@@ -210,3 +210,26 @@ cargo run -- \
 Expected signals:
 - `validation_metrics ...`
 - `validation_status=pass ...`
+
+## 12. Runtime Hardening Profile
+Purpose: verify heartbeat, periodic snapshots, and fail-soft policy.
+
+```bash
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --end-block 359066952 \
+  --follow \
+  --fetch-logs \
+  --receipt-limit 2 \
+  --enable-memory \
+  --extract-features \
+  --heartbeat-interval-blocks 1 \
+  --snapshot-interval-blocks 1 \
+  --memory-snapshot-out memory_snapshot_phase4.json \
+  --error-mode fail-soft
+```
+
+Expected signals:
+- `heartbeat block=...`
+- `memory_snapshot_saved mode=periodic ...`
+- final `runtime_metrics ...`

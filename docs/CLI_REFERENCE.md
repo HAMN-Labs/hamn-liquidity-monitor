@@ -70,6 +70,12 @@ cargo run -- [OPTIONS]
   Bounded queue size between ingestion producer and processing consumer.
 - `--topic0-top-n <USIZE>` (default: `10`)  
   Prints top-N observed `topic0` signatures from fetched logs.
+- `--heartbeat-interval-blocks <U64>` (default: `100`)  
+  Emits follow-mode heartbeat every N processed blocks.
+- `--snapshot-interval-blocks <U64>` (default: `0`)  
+  Saves periodic memory snapshots every N blocks (`0` disables periodic checkpoints).
+- `--error-mode <fail-soft|fail-fast>` (default: `fail-soft`)  
+  Controls behavior on RPC ingestion errors.
 
 ## Validation Baseline
 - `--run-validation-set`  

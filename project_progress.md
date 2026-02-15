@@ -66,9 +66,13 @@
 - [x] Реализован Phase 3 baseline runner (`--run-validation-set`) с proxy precision/recall.
 - [x] Добавлен labeled validation set (`tests/fixtures/validation_set.json`) и пороги acceptance.
 - [x] Подтвержден baseline: `precision_proxy=1.0000`, `recall_proxy=1.0000`.
+- [x] Реализован Phase 4 heartbeat в follow-режиме (`--heartbeat-interval-blocks`).
+- [x] Добавлен graceful shutdown по сигналу с финальным flush.
+- [x] Добавлены periodic memory snapshots (`--snapshot-interval-blocks` + `--memory-snapshot-out`).
+- [x] Добавлен runtime error policy (`--error-mode fail-soft|fail-fast`).
 
 ### In Progress
-- [ ] Phase 4: runtime hardening (heartbeat, graceful shutdown, periodic snapshots).
+- [ ] Phase 5: observability and operations (structured JSON logs + machine-readable metrics stream).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.
