@@ -6,7 +6,7 @@ mod sequences;
 use anyhow::{Context, Result};
 use clap::Parser;
 use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
-use ingestion::rpc::{RpcClient, RpcPolicy, TransactionReceipt, extract_tx_hash};
+use ingestion::rpc::{LogFilter, RpcClient, RpcPolicy, TransactionReceipt, extract_tx_hash};
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use sequences::transition::{SequenceEventKind, TransitionModel};
 use std::cmp::min;
@@ -20,7 +20,7 @@ struct Cli {
     #[arg(long, env = "HAMN_RPC_URL")]
     rpc_url: String,
 
-    #[arg(long)]
+    #[arg(long, default_value_t = 359_066_951)]
     start_block: u64,
 
     #[arg(long)]
@@ -31,6 +31,12 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     fetch_logs: bool,
+
+    #[arg(long = "log-topic0")]
+    log_topic0: Vec<String>,
+
+    #[arg(long = "log-address")]
+    log_address: Vec<String>,
 
     #[arg(long, default_value_t = 0)]
     receipt_limit: usize,
@@ -302,13 +308,31 @@ async fn ingest_block_to_pipeline(
     );
 
     if cli.fetch_logs {
-        match rpc.get_logs(block_number, block_number).await {
+        let log_filter = if cli.log_topic0.is_empty() && cli.log_address.is_empty() {
+            None
+        } else {
+            Some(LogFilter {
+                addresses: cli.log_address.clone(),
+                topic0: cli.log_topic0.clone(),
+            })
+        };
+
+        let logs_result = if let Some(filter) = log_filter.as_ref() {
+            rpc.get_logs_filtered(block_number, block_number, Some(filter))
+                .await
+        } else {
+            rpc.get_logs(block_number, block_number).await
+        };
+
+        match logs_result {
             Ok(logs) => {
                 println!(
-                    "logs_range={}..={} total_logs={}",
+                    "logs_range={}..={} total_logs={} topic0_filters={} address_filters={}",
                     block_number,
                     block_number,
                     logs.len(),
+                    cli.log_topic0.len(),
+                    cli.log_address.len(),
                 );
                 if let Some(first_log) = logs.first() {
                     println!(

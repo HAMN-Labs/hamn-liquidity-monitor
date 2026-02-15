@@ -91,9 +91,18 @@ cargo run -- \
   --enable-sequences
 ```
 
+Log filtering (topic0 / address):
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --fetch-logs \
+  --log-topic0 0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
+```
+
 ## Main CLI Options
 General:
-- `--start-block`, `--end-block`
+- `--start-block` (default: `359066951`), `--end-block`
 - `--follow`, `--poll-interval-ms`
 - `--full-tx`, `--fetch-logs`, `--receipt-limit`
 

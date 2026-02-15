@@ -57,6 +57,15 @@ cargo run -- \
 ```
 
 ```bash
+# Logs with topic filter (example: UniswapV2 Swap topic0)
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --fetch-logs \
+  --log-topic0 0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
+```
+
+```bash
 # Feature extraction from receipts
 cargo run -- \
   --start-block 2 \

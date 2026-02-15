@@ -49,6 +49,8 @@
 - [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на examples.
 - [x] Добавлен FAQ на английском (`docs/FAQ.md`).
 - [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на FAQ.
+- [x] Стартована следующая фаза: добавлены конфигурируемые log-фильтры (`--log-topic0`, `--log-address`) для `eth_getLogs`.
+- [x] Обновлена англоязычная документация по фильтрам (`README.md`, `docs/USER_GUIDE.md`, `docs/CLI_REFERENCE.md`, `docs/EXAMPLES.md`, `docs/FAQ.md`).
 
 ### In Progress
 - [ ] Подготовить следующий итерационный шаг: улучшение качества детекции на блоках с реальными DeFi-логами.

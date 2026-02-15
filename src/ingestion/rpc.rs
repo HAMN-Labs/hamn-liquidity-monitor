@@ -47,10 +47,33 @@ impl RpcClient {
     }
 
     pub async fn get_logs(&self, from_block: u64, to_block: u64) -> Result<Vec<LogEntry>> {
-        let params = serde_json::json!([{
-            "fromBlock": to_hex_quantity(from_block),
-            "toBlock": to_hex_quantity(to_block)
-        }]);
+        self.get_logs_filtered(from_block, to_block, None).await
+    }
+
+    pub async fn get_logs_filtered(
+        &self,
+        from_block: u64,
+        to_block: u64,
+        filter: Option<&LogFilter>,
+    ) -> Result<Vec<LogEntry>> {
+        let mut query = serde_json::Map::new();
+        query.insert(
+            "fromBlock".to_string(),
+            serde_json::Value::String(to_hex_quantity(from_block)),
+        );
+        query.insert(
+            "toBlock".to_string(),
+            serde_json::Value::String(to_hex_quantity(to_block)),
+        );
+        if let Some(filter) = filter {
+            if let Some(address) = build_address_filter(filter) {
+                query.insert("address".to_string(), address);
+            }
+            if let Some(topics) = build_topics_filter(filter) {
+                query.insert("topics".to_string(), topics);
+            }
+        }
+        let params = serde_json::Value::Array(vec![serde_json::Value::Object(query)]);
         self.call("eth_getLogs", params)
             .await?
             .context("logs missing in JSON-RPC response")
@@ -124,6 +147,12 @@ impl RpcClient {
 
         bail!("exhausted retries without response")
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LogFilter {
+    pub addresses: Vec<String>,
+    pub topic0: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -222,6 +251,43 @@ fn to_hex_quantity(value: u64) -> String {
     format!("0x{value:x}")
 }
 
+fn build_address_filter(filter: &LogFilter) -> Option<serde_json::Value> {
+    if filter.addresses.is_empty() {
+        None
+    } else if filter.addresses.len() == 1 {
+        Some(serde_json::Value::String(filter.addresses[0].clone()))
+    } else {
+        Some(serde_json::Value::Array(
+            filter
+                .addresses
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        ))
+    }
+}
+
+fn build_topics_filter(filter: &LogFilter) -> Option<serde_json::Value> {
+    if filter.topic0.is_empty() {
+        None
+    } else if filter.topic0.len() == 1 {
+        Some(serde_json::Value::Array(vec![serde_json::Value::String(
+            filter.topic0[0].clone(),
+        )]))
+    } else {
+        let or_topics = serde_json::Value::Array(
+            filter
+                .topic0
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        );
+        Some(serde_json::Value::Array(vec![or_topics]))
+    }
+}
+
 fn parse_hex_quantity(value: &str) -> Result<u64> {
     let s = value.trim_start_matches("0x");
     u64::from_str_radix(s, 16).context("invalid hex quantity")
@@ -291,5 +357,15 @@ mod tests {
         assert_eq!(backoff_delay_ms(&policy, 1), 200);
         assert_eq!(backoff_delay_ms(&policy, 2), 250);
         assert_eq!(backoff_delay_ms(&policy, 3), 250);
+    }
+
+    #[test]
+    fn builds_topic0_or_filter() {
+        let filter = LogFilter {
+            addresses: Vec::new(),
+            topic0: vec!["0xaaa".to_string(), "0xbbb".to_string()],
+        };
+        let topics = build_topics_filter(&filter).expect("topics");
+        assert_eq!(topics, serde_json::json!([["0xaaa", "0xbbb"]]));
     }
 }

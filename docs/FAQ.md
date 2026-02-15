@@ -74,3 +74,9 @@ cargo run -- \
 2. `docs/CLI_REFERENCE.md`
 3. `docs/OPERATIONS_RUNBOOK.md`
 4. `docs/EXAMPLES.md`
+
+## 13) Can I filter logs by event signature or contract?
+Yes. Use:
+- `--log-topic0 <event_topic_hash>` (repeatable)
+- `--log-address <contract_address>` (repeatable)
+Together with `--fetch-logs`.

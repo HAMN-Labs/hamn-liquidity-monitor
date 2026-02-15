@@ -9,7 +9,7 @@ cargo run -- [OPTIONS]
 - `--rpc-url <URL>`  
   RPC endpoint URL. Can also be provided via `HAMN_RPC_URL`.
 - `--start-block <U64>`  
-  First block to process.
+  First block to process (default: `359066951`).
 - `--end-block <U64>`  
   Last block to process. Required unless `--follow` is enabled.
 - `--follow`  
@@ -22,6 +22,10 @@ cargo run -- [OPTIONS]
   Request full transaction objects in `eth_getBlockByNumber`.
 - `--fetch-logs`  
   Request `eth_getLogs` per processed block.
+- `--log-topic0 <HEX>` (repeatable)  
+  Optional topic0 filter(s) used with `--fetch-logs`.
+- `--log-address <ADDRESS>` (repeatable)  
+  Optional contract address filter(s) used with `--fetch-logs`.
 - `--receipt-limit <USIZE>` (default: `0`)  
   Max receipts fetched per block.
 

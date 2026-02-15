@@ -142,3 +142,17 @@ cargo run -- \
 Expected signals:
 - reduced transient fetch failures
 - stable `runtime_metrics rpc_errors=...`
+
+## 9. DeFi Coverage with Topic Filter
+Purpose: focus log ingestion on known liquidity-related event topics.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000200 \
+  --fetch-logs \
+  --log-topic0 0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
+```
+
+Expected signals:
+- `logs_range=... total_logs=... topic0_filters=1`
