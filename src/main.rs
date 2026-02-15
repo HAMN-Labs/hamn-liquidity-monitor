@@ -2,7 +2,10 @@ mod ingestion;
 
 use anyhow::Result;
 use clap::Parser;
-use ingestion::rpc::{RpcClient, extract_tx_hash};
+use ingestion::rpc::{RpcClient, RpcPolicy, extract_tx_hash};
+use std::cmp::min;
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "HAMN liquidity monitor (Stage 1 ingestion)")]
@@ -14,7 +17,7 @@ struct Cli {
     start_block: u64,
 
     #[arg(long)]
-    end_block: u64,
+    end_block: Option<u64>,
 
     #[arg(long, default_value_t = false)]
     full_tx: bool,
@@ -24,40 +27,102 @@ struct Cli {
 
     #[arg(long, default_value_t = 0)]
     receipt_limit: usize,
+
+    #[arg(long, default_value_t = 10_000)]
+    rpc_timeout_ms: u64,
+
+    #[arg(long, default_value_t = 3)]
+    rpc_max_retries: u32,
+
+    #[arg(long, default_value_t = 250)]
+    rpc_backoff_ms: u64,
+
+    #[arg(long, default_value_t = 2_000)]
+    rpc_max_backoff_ms: u64,
+
+    #[arg(long, default_value_t = false)]
+    follow: bool,
+
+    #[arg(long, default_value_t = 2_000)]
+    poll_interval_ms: u64,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    if cli.start_block > cli.end_block {
+
+    let end_block = match cli.end_block {
+        Some(value) => value,
+        None if cli.follow => u64::MAX,
+        None => anyhow::bail!("end_block is required when --follow is not enabled"),
+    };
+
+    if cli.start_block > end_block {
         anyhow::bail!("start_block must be <= end_block");
     }
 
-    let rpc = RpcClient::new(cli.rpc_url);
-    let mut transaction_hashes = Vec::new();
-    for block_number in cli.start_block..=cli.end_block {
-        let block = rpc.get_block_by_number(block_number, cli.full_tx).await?;
-        for tx in &block.transactions {
-            if let Some(hash) = extract_tx_hash(tx) {
-                transaction_hashes.push(hash.to_owned());
-            }
+    let policy = RpcPolicy {
+        timeout_ms: cli.rpc_timeout_ms,
+        max_retries: cli.rpc_max_retries,
+        initial_backoff_ms: cli.rpc_backoff_ms,
+        max_backoff_ms: cli.rpc_max_backoff_ms,
+    };
+    let rpc = RpcClient::new_with_policy(cli.rpc_url.clone(), policy);
+
+    let mut next_block = cli.start_block;
+    loop {
+        if next_block > end_block {
+            break;
         }
-        println!(
-            "block={} hash={} parent={} txs={} timestamp={}",
-            block.number,
-            block.hash.as_deref().unwrap_or("<none>"),
-            block.parent_hash,
-            block.transactions.len(),
-            block.timestamp,
-        );
+
+        let target_end = if cli.follow {
+            let latest = rpc.get_latest_block_number().await?;
+            min(latest, end_block)
+        } else {
+            end_block
+        };
+
+        if next_block > target_end {
+            sleep(Duration::from_millis(cli.poll_interval_ms)).await;
+            continue;
+        }
+
+        while next_block <= target_end {
+            process_block(&rpc, &cli, next_block).await?;
+            next_block += 1;
+        }
+
+        if !cli.follow {
+            break;
+        }
     }
 
+    Ok(())
+}
+
+async fn process_block(rpc: &RpcClient, cli: &Cli, block_number: u64) -> Result<()> {
+    let mut transaction_hashes = Vec::new();
+    let block = rpc.get_block_by_number(block_number, cli.full_tx).await?;
+    for tx in &block.transactions {
+        if let Some(hash) = extract_tx_hash(tx) {
+            transaction_hashes.push(hash.to_owned());
+        }
+    }
+    println!(
+        "block={} hash={} parent={} txs={} timestamp={}",
+        block.number,
+        block.hash.as_deref().unwrap_or("<none>"),
+        block.parent_hash,
+        block.transactions.len(),
+        block.timestamp,
+    );
+
     if cli.fetch_logs {
-        let logs = rpc.get_logs(cli.start_block, cli.end_block).await?;
+        let logs = rpc.get_logs(block_number, block_number).await?;
         println!(
             "logs_range={}..={} total_logs={}",
-            cli.start_block,
-            cli.end_block,
+            block_number,
+            block_number,
             logs.len(),
         );
         if let Some(first_log) = logs.first() {

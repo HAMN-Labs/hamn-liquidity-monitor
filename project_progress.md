@@ -14,10 +14,12 @@
 - [x] Добавлены RPC-методы `eth_getLogs` и `eth_getTransactionReceipt` в ingestion-клиент.
 - [x] Добавлены CLI-опции `--fetch-logs` и `--receipt-limit` для валидации данных.
 - [x] Проверены на Arbitrum: логи (`1..3`) и receipt (блок `2`, `status=1`).
+- [x] Добавлена retry/backoff/timeout policy для RPC-запросов.
+- [x] Добавлен polling-режим (`--follow`) для near-real-time обработки блоков.
+- [x] Проверены replay и polling-сценарии на Arbitrum через Alchemy endpoint.
 
 ### In Progress
-- [ ] Stage 1: добавить retry/backoff и timeout policy.
-- [ ] Stage 1: historical replay и near-real-time polling.
+- [ ] Stage 2: описать структуру фичей для swap / add-liquidity / remove-liquidity.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

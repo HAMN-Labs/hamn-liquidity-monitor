@@ -1,18 +1,41 @@
 use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
 pub struct RpcClient {
     http: Client,
     url: String,
+    policy: RpcPolicy,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RpcPolicy {
+    pub timeout_ms: u64,
+    pub max_retries: u32,
+    pub initial_backoff_ms: u64,
+    pub max_backoff_ms: u64,
+}
+
+impl Default for RpcPolicy {
+    fn default() -> Self {
+        Self {
+            timeout_ms: 10_000,
+            max_retries: 3,
+            initial_backoff_ms: 250,
+            max_backoff_ms: 2_000,
+        }
+    }
 }
 
 impl RpcClient {
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new_with_policy(url: impl Into<String>, policy: RpcPolicy) -> Self {
         Self {
             http: Client::new(),
             url: url.into(),
+            policy,
         }
     }
 
@@ -41,28 +64,65 @@ impl RpcClient {
         self.call("eth_getTransactionReceipt", params).await
     }
 
+    pub async fn get_latest_block_number(&self) -> Result<u64> {
+        let result: String = self
+            .call("eth_blockNumber", serde_json::json!([]))
+            .await?
+            .context("latest block number missing in JSON-RPC response")?;
+        parse_hex_quantity(&result).context("failed to parse latest block number")
+    }
+
     async fn call<T>(&self, method: &'static str, params: serde_json::Value) -> Result<Option<T>>
     where
         T: serde::de::DeserializeOwned,
     {
-        let response: JsonRpcResponse<T> = self
-            .http
-            .post(&self.url)
-            .json(&JsonRpcRequest::new(method, params))
-            .send()
-            .await
-            .context("failed to send JSON-RPC request")?
-            .error_for_status()
-            .context("JSON-RPC endpoint returned non-success status")?
-            .json()
-            .await
-            .context("failed to deserialize JSON-RPC response")?;
+        for attempt in 0..=self.policy.max_retries {
+            let send_result = self
+                .http
+                .post(&self.url)
+                .timeout(Duration::from_millis(self.policy.timeout_ms))
+                .json(&JsonRpcRequest::new(method, params.clone()))
+                .send()
+                .await;
 
-        if let Some(err) = response.error {
-            bail!("rpc error {}: {}", err.code, err.message);
+            match send_result {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_server_error() || status.as_u16() == 429 {
+                        if attempt < self.policy.max_retries {
+                            sleep(Duration::from_millis(backoff_delay_ms(&self.policy, attempt))).await;
+                            continue;
+                        }
+                        bail!("JSON-RPC endpoint returned retryable status {status} after retries");
+                    }
+
+                    if !status.is_success() {
+                        bail!("JSON-RPC endpoint returned status {status}");
+                    }
+
+                    let response: JsonRpcResponse<T> = response
+                        .json()
+                        .await
+                        .context("failed to deserialize JSON-RPC response")?;
+
+                    if let Some(err) = response.error {
+                        bail!("rpc error {}: {}", err.code, err.message);
+                    }
+
+                    return Ok(response.result);
+                }
+                Err(err) => {
+                    let retryable = err.is_timeout() || err.is_connect() || err.is_request();
+                    if retryable && attempt < self.policy.max_retries {
+                        sleep(Duration::from_millis(backoff_delay_ms(&self.policy, attempt))).await;
+                        continue;
+                    }
+                    return Err(err).context("failed to send JSON-RPC request");
+                }
+            }
         }
 
-        Ok(response.result)
+        bail!("exhausted retries without response")
     }
 }
 
@@ -149,6 +209,19 @@ fn to_hex_quantity(value: u64) -> String {
     format!("0x{value:x}")
 }
 
+fn parse_hex_quantity(value: &str) -> Result<u64> {
+    let s = value.trim_start_matches("0x");
+    u64::from_str_radix(s, 16).context("invalid hex quantity")
+}
+
+fn backoff_delay_ms(policy: &RpcPolicy, attempt: u32) -> u64 {
+    let factor = 1u64 << attempt.min(20);
+    policy
+        .initial_backoff_ms
+        .saturating_mul(factor)
+        .min(policy.max_backoff_ms)
+}
+
 fn de_hex_u64<'de, D>(deserializer: D) -> std::result::Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -176,5 +249,19 @@ mod tests {
 
         assert_eq!(extract_tx_hash(&from_hash), Some("0xabc"));
         assert_eq!(extract_tx_hash(&from_full), Some("0xdef"));
+    }
+
+    #[test]
+    fn backoff_increases_and_caps() {
+        let policy = RpcPolicy {
+            timeout_ms: 1_000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 250,
+        };
+        assert_eq!(backoff_delay_ms(&policy, 0), 100);
+        assert_eq!(backoff_delay_ms(&policy, 1), 200);
+        assert_eq!(backoff_delay_ms(&policy, 2), 250);
+        assert_eq!(backoff_delay_ms(&policy, 3), 250);
     }
 }

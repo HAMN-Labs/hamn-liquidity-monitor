@@ -55,3 +55,12 @@ cargo run -- \
   --fetch-logs \
   --receipt-limit 1
 ```
+
+```bash
+# Near-real-time polling (bounded by end block)
+cargo run -- \
+  --start-block 2 \
+  --end-block 10 \
+  --follow \
+  --poll-interval-ms 1000
+```
