@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::Parser;
 use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
 use ingestion::rpc::{RpcClient, RpcPolicy, extract_tx_hash};
-use memory::adaptive::{AdaptiveMemory, MatchOutcome};
+use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use std::cmp::min;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -40,6 +40,24 @@ struct Cli {
 
     #[arg(long, default_value_t = 0.35)]
     memory_distance_threshold: f64,
+
+    #[arg(long, default_value_t = 0.999)]
+    memory_decay_per_block: f64,
+
+    #[arg(long, default_value_t = 0.08)]
+    memory_min_confidence: f64,
+
+    #[arg(long, default_value_t = 50_000)]
+    memory_max_inactive_blocks: u64,
+
+    #[arg(long, default_value_t = 2)]
+    memory_min_occurrences_for_retention: u64,
+
+    #[arg(long, default_value_t = 2_000)]
+    memory_noise_inactive_blocks: u64,
+
+    #[arg(long, default_value_t = 50_000)]
+    memory_max_patterns: usize,
 
     #[arg(long)]
     memory_snapshot_in: Option<String>,
@@ -87,11 +105,26 @@ async fn main() -> Result<()> {
         max_backoff_ms: cli.rpc_max_backoff_ms,
     };
     let rpc = RpcClient::new_with_policy(cli.rpc_url.clone(), policy);
+    let stabilization = StabilizationConfig {
+        confidence_decay_per_block: cli.memory_decay_per_block,
+        min_confidence: cli.memory_min_confidence,
+        max_inactive_blocks: cli.memory_max_inactive_blocks,
+        min_occurrences_for_retention: cli.memory_min_occurrences_for_retention,
+        noise_inactive_blocks: cli.memory_noise_inactive_blocks,
+        max_patterns: cli.memory_max_patterns,
+    };
     let mut memory = if cli.enable_memory {
         if let Some(path) = &cli.memory_snapshot_in {
-            Some(AdaptiveMemory::load_snapshot(path, cli.memory_distance_threshold)?)
+            Some(AdaptiveMemory::load_snapshot_with_config(
+                path,
+                cli.memory_distance_threshold,
+                stabilization,
+            )?)
         } else {
-            Some(AdaptiveMemory::new(cli.memory_distance_threshold))
+            Some(AdaptiveMemory::new_with_config(
+                cli.memory_distance_threshold,
+                stabilization,
+            ))
         }
     } else {
         None
@@ -117,6 +150,22 @@ async fn main() -> Result<()> {
 
         while next_block <= target_end {
             process_block(&rpc, &cli, next_block, &mut memory).await?;
+            if let Some(memory) = memory.as_mut() {
+                let pruned = memory.stabilize(next_block);
+                let metrics = memory.metrics();
+                println!(
+                    "memory_metrics block={} active_patterns={} match_ratio={:.4} churn_rate={:.4} pruned_now={} total_obs={} matched={} created={} pruned_total={}",
+                    next_block,
+                    metrics.active_patterns,
+                    metrics.match_ratio,
+                    metrics.churn_rate,
+                    pruned,
+                    metrics.total_observations,
+                    metrics.matched_observations,
+                    metrics.created_observations,
+                    metrics.pruned_patterns_total,
+                );
+            }
             next_block += 1;
         }
 

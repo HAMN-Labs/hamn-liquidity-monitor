@@ -26,9 +26,13 @@
 - [x] Добавлена snapshot сериализация памяти (`--memory-snapshot-in`, `--memory-snapshot-out`).
 - [x] Добавлена интеграция памяти в runtime через `--enable-memory`.
 - [x] Добавлены unit-тесты Stage 3, общий статус тестов: 9/9 passed.
+- [x] Реализован Stage 4 stabilization: decay confidence + pruning stale/noisy/weak patterns.
+- [x] Добавлены лимиты памяти (`memory_max_patterns`) и retention ranking при переполнении.
+- [x] Добавлены runtime-метрики памяти: `active_patterns`, `match_ratio`, `churn_rate`.
+- [x] Добавлены тесты Stage 4, общий статус тестов: 12/12 passed.
 
 ### In Progress
-- [ ] Stage 4: реализовать decay веса паттернов.
+- [ ] Stage 5: реализовать хранение последовательностей действий.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

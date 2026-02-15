@@ -84,3 +84,18 @@ cargo run -- \
   --memory-distance-threshold 0.35 \
   --memory-snapshot-out memory_snapshot.json
 ```
+
+```bash
+# Adaptive memory stabilization tuning
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --receipt-limit 20 \
+  --enable-memory \
+  --memory-decay-per-block 0.999 \
+  --memory-min-confidence 0.08 \
+  --memory-max-inactive-blocks 50000 \
+  --memory-noise-inactive-blocks 2000 \
+  --memory-min-occurrences-for-retention 2 \
+  --memory-max-patterns 50000
+```
