@@ -5,7 +5,10 @@ mod sequences;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
+use features::extractor::{
+    LiquidityEventKind, NormalizationProfile, extract_features_with_stats,
+    normalize_feature_with_profile,
+};
 use ingestion::rpc::{LogFilter, RpcClient, RpcPolicy, TransactionReceipt, extract_tx_hash};
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use sequences::transition::{SequenceEventKind, TransitionModel};
@@ -44,6 +47,12 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     extract_features: bool,
+
+    #[arg(long, default_value_t = 18)]
+    token0_decimals: u8,
+
+    #[arg(long, default_value_t = 18)]
+    token1_decimals: u8,
 
     #[arg(long, default_value_t = false)]
     enable_sequences: bool,
@@ -136,6 +145,9 @@ struct ProducerStats {
 struct ConsumerStats {
     receipts_processed: u64,
     features_processed: u64,
+    recognized_logs: u64,
+    unknown_topic_logs: u64,
+    malformed_logs: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -204,9 +216,21 @@ async fn main() -> Result<()> {
     let (tx, rx) = mpsc::channel::<PipelineMessage>(queue_capacity);
 
     let should_extract = cli.extract_features || cli.enable_memory || cli.enable_sequences;
+    let normalization = NormalizationProfile {
+        token0_decimals: cli.token0_decimals,
+        token1_decimals: cli.token1_decimals,
+    };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
     let consumer_handle = tokio::spawn(async move {
-        consume_pipeline(rx, memory, sequences, should_extract, smoothing_alpha).await
+        consume_pipeline(
+            rx,
+            memory,
+            sequences,
+            should_extract,
+            smoothing_alpha,
+            normalization,
+        )
+        .await
     });
 
     let runtime_started = Instant::now();
@@ -434,6 +458,7 @@ async fn consume_pipeline(
     mut sequences: Option<TransitionModel>,
     should_extract_features: bool,
     smoothing_alpha: f64,
+    normalization: NormalizationProfile,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
 
@@ -451,14 +476,30 @@ async fn consume_pipeline(
 
                 if should_extract_features {
                     let started = Instant::now();
-                    let features = extract_features_from_receipt(&receipt);
+                    let (features, extraction_stats) = extract_features_with_stats(&receipt);
                     println!("features_extracted={}", features.len());
                     stats.features_processed = stats
                         .features_processed
                         .saturating_add(features.len() as u64);
+                    stats.recognized_logs = stats
+                        .recognized_logs
+                        .saturating_add(extraction_stats.recognized_logs);
+                    stats.unknown_topic_logs = stats
+                        .unknown_topic_logs
+                        .saturating_add(extraction_stats.unknown_topic_logs);
+                    stats.malformed_logs = stats
+                        .malformed_logs
+                        .saturating_add(extraction_stats.malformed_logs);
+                    println!(
+                        "feature_extraction_stats logs_total={} recognized={} unknown_topic={} malformed={}",
+                        extraction_stats.logs_total,
+                        extraction_stats.recognized_logs,
+                        extraction_stats.unknown_topic_logs,
+                        extraction_stats.malformed_logs,
+                    );
 
                     for feature in features {
-                        let normalized = normalize_feature(feature);
+                        let normalized = normalize_feature_with_profile(feature, normalization);
                         println!(
                             "feature event={} tx={} pool={} volume_ln={:.6} imbalance={:.6} gas_ln={:.6}",
                             event_label(&normalized.feature.event_kind),
@@ -621,12 +662,15 @@ fn print_runtime_metrics(elapsed: Duration, producer: &ProducerStats, consumer: 
     };
 
     println!(
-        "runtime_metrics elapsed_s={:.3} blocks={} receipts_in={} receipts_processed={} features={} throughput_rps={:.3} avg_block_fetch_ms={:.3} avg_receipt_fetch_ms={:.3} avg_queue_backpressure_ms={:.3} avg_queue_latency_ms={:.3} avg_processing_ms={:.3} logs_total={} logs_per_block={:.3} log_hit_ratio={:.3} features_per_block={:.3} feature_hit_ratio={:.3} rpc_errors={} max_block_lag={}",
+        "runtime_metrics elapsed_s={:.3} blocks={} receipts_in={} receipts_processed={} features={} recognized_logs={} unknown_topic_logs={} malformed_logs={} throughput_rps={:.3} avg_block_fetch_ms={:.3} avg_receipt_fetch_ms={:.3} avg_queue_backpressure_ms={:.3} avg_queue_latency_ms={:.3} avg_processing_ms={:.3} logs_total={} logs_per_block={:.3} log_hit_ratio={:.3} features_per_block={:.3} feature_hit_ratio={:.3} rpc_errors={} max_block_lag={}",
         elapsed_secs,
         producer.blocks_processed,
         producer.receipts_enqueued,
         consumer.receipts_processed,
         consumer.features_processed,
+        consumer.recognized_logs,
+        consumer.unknown_topic_logs,
+        consumer.malformed_logs,
         throughput_rps,
         avg_block_fetch_ms,
         avg_receipt_fetch_ms,

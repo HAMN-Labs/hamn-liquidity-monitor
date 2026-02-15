@@ -72,7 +72,9 @@ cargo run -- \
   --start-block 2 \
   --end-block 10 \
   --receipt-limit 5 \
-  --extract-features
+  --extract-features \
+  --token0-decimals 18 \
+  --token1-decimals 18
 ```
 
 ```bash

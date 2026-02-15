@@ -38,6 +38,10 @@ cargo run -- [OPTIONS]
 ## Feature Extraction
 - `--extract-features`  
   Enables feature extraction from receipt logs.
+- `--token0-decimals <U8>` (default: `18`)  
+  Decimals used to scale token0 amounts during normalization.
+- `--token1-decimals <U8>` (default: `18`)  
+  Decimals used to scale token1 amounts during normalization.
 
 ## Sequence Modeling
 - `--enable-sequences`  

@@ -390,10 +390,10 @@ mod tests {
             min_occurrences_for_retention: 0,
             ..StabilizationConfig::default()
         };
-        let mut memory = AdaptiveMemory::new_with_config(0.01, cfg);
+        let mut memory = AdaptiveMemory::new_with_config(1e-9, cfg);
         let _ = memory.observe(&sample_feature(1, 10, 10));
-        let _ = memory.observe(&sample_feature(2, 1_000, 1_000));
-        let _ = memory.observe(&sample_feature(3, 2_000, 2_000));
+        let _ = memory.observe(&sample_feature(2, 10_000_000_000_000_000_000, 10));
+        let _ = memory.observe(&sample_feature(3, 1_000_000_000_000_000_000_000_000, 10));
 
         let pruned = memory.stabilize(3);
         assert_eq!(pruned, 1);

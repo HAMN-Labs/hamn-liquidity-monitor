@@ -58,9 +58,14 @@
 - [x] Сформирован первый coverage report (`docs/PHASE1_COVERAGE_REPORT.md`).
 - [x] Добавлен `topic0` discovery summary (`topic0_top`) для приоритизации расширения парсера.
 - [x] Получен первый список top topic0 сигнатур на диапазоне `359066951..359066952`.
+- [x] Расширен parser дополнительными swap-сигнатурами (`0xc42079f9...`, `0x19b47279...`).
+- [x] Подтвержден рост качества детекции на диапазоне `359066951..359066952`: `features_per_block` с `0.000` до `0.500`.
+- [x] Добавлена decimals-aware нормализация (`--token0-decimals`, `--token1-decimals`).
+- [x] Добавлены explicit extraction counters (`recognized/unknown/malformed`) в runtime.
+- [x] Добавлены real-world receipt fixtures и тесты для extraction (`tests/fixtures/*_35906695*.json`).
 
 ### In Progress
-- [ ] Phase 2: расширить парсер событий для современных DeFi-логов (блоки `359066951+`).
+- [ ] Phase 3: определить и зафиксировать detection quality baseline (proxy metrics + validation set).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

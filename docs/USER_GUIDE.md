@@ -118,6 +118,8 @@ Pipeline control:
 
 Feature extraction:
 - `--extract-features`
+- `--token0-decimals`
+- `--token1-decimals`
 
 Adaptive memory:
 - `--enable-memory`
@@ -138,6 +140,7 @@ Sequence model:
 ## Runtime Output
 Important log lines:
 - `block=...` / `receipt tx=...` / `features_extracted=...`
+- `feature_extraction_stats logs_total=... recognized=... unknown_topic=... malformed=...`
 - `memory_metrics ...`
 - `sequence_metrics ...`
 - `runtime_metrics ...`
