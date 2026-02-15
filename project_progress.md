@@ -63,9 +63,12 @@
 - [x] Добавлена decimals-aware нормализация (`--token0-decimals`, `--token1-decimals`).
 - [x] Добавлены explicit extraction counters (`recognized/unknown/malformed`) в runtime.
 - [x] Добавлены real-world receipt fixtures и тесты для extraction (`tests/fixtures/*_35906695*.json`).
+- [x] Реализован Phase 3 baseline runner (`--run-validation-set`) с proxy precision/recall.
+- [x] Добавлен labeled validation set (`tests/fixtures/validation_set.json`) и пороги acceptance.
+- [x] Подтвержден baseline: `precision_proxy=1.0000`, `recall_proxy=1.0000`.
 
 ### In Progress
-- [ ] Phase 3: определить и зафиксировать detection quality baseline (proxy metrics + validation set).
+- [ ] Phase 4: runtime hardening (heartbeat, graceful shutdown, periodic snapshots).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

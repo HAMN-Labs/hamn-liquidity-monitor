@@ -8,6 +8,7 @@ cargo run -- [OPTIONS]
 ## Core Options
 - `--rpc-url <URL>`  
   RPC endpoint URL. Can also be provided via `HAMN_RPC_URL`.
+  Required for chain replay/follow modes; not required for `--run-validation-set`.
 - `--start-block <U64>`  
   First block to process (default: `359066951`).
 - `--end-block <U64>`  
@@ -69,6 +70,16 @@ cargo run -- [OPTIONS]
   Bounded queue size between ingestion producer and processing consumer.
 - `--topic0-top-n <USIZE>` (default: `10`)  
   Prints top-N observed `topic0` signatures from fetched logs.
+
+## Validation Baseline
+- `--run-validation-set`  
+  Runs offline labeled validation and exits.
+- `--validation-set-path <PATH>` (default: `tests/fixtures/validation_set.json`)  
+  Path to validation set JSON.
+- `--validation-min-precision <F64>` (default: `0.8`)  
+  Minimum required proxy precision.
+- `--validation-min-recall <F64>` (default: `0.8`)  
+  Minimum required proxy recall.
 
 ## Example Presets
 Replay with full pipeline:

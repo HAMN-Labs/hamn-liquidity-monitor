@@ -195,3 +195,18 @@ cargo run -- \
   --enable-memory \
   --enable-sequences
 ```
+
+## 11. Validation Baseline Runner
+Purpose: run labeled offline baseline and enforce quality thresholds.
+
+```bash
+cargo run -- \
+  --run-validation-set \
+  --validation-set-path tests/fixtures/validation_set.json \
+  --validation-min-precision 0.8 \
+  --validation-min-recall 0.8
+```
+
+Expected signals:
+- `validation_metrics ...`
+- `validation_status=pass ...`

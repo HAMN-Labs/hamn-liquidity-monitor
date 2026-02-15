@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "name": "swap_like_359066952",
+      "receipt_file": "tests/fixtures/receipt_swap_like_359066952.json",
+      "expected": {
+        "swap": 1,
+        "add_liquidity": 0,
+        "remove_liquidity": 0
+      }
+    },
+    {
+      "name": "unknown_topics_359066951",
+      "receipt_file": "tests/fixtures/receipt_unknown_topics_359066951.json",
+      "expected": {
+        "swap": 0,
+        "add_liquidity": 0,
+        "remove_liquidity": 0
+      }
+    }
+  ]
+}

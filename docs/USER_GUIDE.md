@@ -137,6 +137,12 @@ Sequence model:
 - `--enable-sequences`
 - `--sequence-smoothing-alpha`
 
+Validation baseline:
+- `--run-validation-set`
+- `--validation-set-path`
+- `--validation-min-precision`
+- `--validation-min-recall`
+
 ## Runtime Output
 Important log lines:
 - `block=...` / `receipt tx=...` / `features_extracted=...`

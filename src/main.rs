@@ -2,6 +2,7 @@ mod features;
 mod ingestion;
 mod memory;
 mod sequences;
+mod validation;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -12,6 +13,7 @@ use features::extractor::{
 use ingestion::rpc::{LogFilter, RpcClient, RpcPolicy, TransactionReceipt, extract_tx_hash};
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use sequences::transition::{SequenceEventKind, TransitionModel};
+use validation::baseline::run_validation_set;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -22,7 +24,7 @@ use tokio::time::sleep;
 #[command(author, version, about = "HAMN liquidity monitor (online runtime)")]
 struct Cli {
     #[arg(long, env = "HAMN_RPC_URL")]
-    rpc_url: String,
+    rpc_url: Option<String>,
 
     #[arg(long, default_value_t = 359_066_951)]
     start_block: u64,
@@ -113,6 +115,18 @@ struct Cli {
 
     #[arg(long, default_value_t = 10)]
     topic0_top_n: usize,
+
+    #[arg(long, default_value_t = false)]
+    run_validation_set: bool,
+
+    #[arg(long, default_value = "tests/fixtures/validation_set.json")]
+    validation_set_path: String,
+
+    #[arg(long, default_value_t = 0.8)]
+    validation_min_precision: f64,
+
+    #[arg(long, default_value_t = 0.8)]
+    validation_min_recall: f64,
 }
 
 #[derive(Debug)]
@@ -162,6 +176,27 @@ struct ConsumerOutput {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    if cli.run_validation_set {
+        let report = run_validation_set(
+            &cli.validation_set_path,
+            cli.validation_min_precision,
+            cli.validation_min_recall,
+        )?;
+        println!(
+            "validation_status=pass cases={} tp={} fp={} fn={} precision_proxy={:.4} recall_proxy={:.4} recognized_logs={} unknown_topic_logs={} malformed_logs={}",
+            report.cases,
+            report.tp,
+            report.fp,
+            report.fn_,
+            report.precision_proxy,
+            report.recall_proxy,
+            report.recognized_logs,
+            report.unknown_topic_logs,
+            report.malformed_logs,
+        );
+        return Ok(());
+    }
+
     let end_block = match cli.end_block {
         Some(value) => value,
         None if cli.follow => u64::MAX,
@@ -172,13 +207,18 @@ async fn main() -> Result<()> {
         anyhow::bail!("start_block must be <= end_block");
     }
 
+    let rpc_url = cli
+        .rpc_url
+        .clone()
+        .context("rpc_url is required unless --run-validation-set is used")?;
+
     let policy = RpcPolicy {
         timeout_ms: cli.rpc_timeout_ms,
         max_retries: cli.rpc_max_retries,
         initial_backoff_ms: cli.rpc_backoff_ms,
         max_backoff_ms: cli.rpc_max_backoff_ms,
     };
-    let rpc = RpcClient::new_with_policy(cli.rpc_url.clone(), policy);
+    let rpc = RpcClient::new_with_policy(rpc_url, policy);
 
     let stabilization = StabilizationConfig {
         confidence_decay_per_block: cli.memory_decay_per_block,
