@@ -110,3 +110,15 @@ cargo run -- \
   --enable-sequences \
   --sequence-smoothing-alpha 0.25
 ```
+
+```bash
+# Stage 6 online runtime (bounded pipeline + runtime metrics)
+cargo run -- \
+  --start-block 2 \
+  --end-block 20 \
+  --receipt-limit 2 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences \
+  --pipeline-queue-capacity 4
+```

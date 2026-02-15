@@ -35,9 +35,13 @@
 - [x] Построен transition map с online-обновлением вероятностей.
 - [x] Добавлено Laplace smoothing для редких переходов.
 - [x] Добавлены тесты Stage 5, общий статус тестов: 15/15 passed.
+- [x] Реализован Stage 6 online runtime pipeline (producer/consumer на bounded `mpsc`).
+- [x] Добавлен backpressure через `--pipeline-queue-capacity`.
+- [x] Добавлены runtime-метрики latency/throughput/errors/lag.
+- [x] Проведена e2e валидация на Arbitrum (Alchemy, блоки `2..20`).
 
 ### In Progress
-- [ ] Stage 6: собрать ingestion -> features -> memory -> sequences pipeline hardening.
+- [ ] Подготовить следующий итерационный шаг: улучшение качества детекции на блоках с реальными DeFi-логами.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.
