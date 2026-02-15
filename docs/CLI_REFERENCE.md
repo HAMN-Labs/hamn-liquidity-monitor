@@ -55,6 +55,18 @@ cargo run -- [OPTIONS]
 - `--sequence-smoothing-alpha <F64>` (default: `0.25`)  
   Laplace smoothing factor for transition probabilities.
 
+## Alerting
+- `--enable-alerts`  
+  Enables rule-based online alert emission from normalized features.
+- `--alert-min-volume-ln <F64>` (default: `1.0`)  
+  Minimum normalized volume threshold for alert rule.
+- `--alert-min-abs-imbalance <F64>` (default: `0.2`)  
+  Minimum absolute imbalance threshold for alert rule.
+- `--alert-min-gas-used <F64>` (default: `20000`)  
+  Minimum transaction gas used threshold for alert rule.
+- `--alert-cooldown-blocks <U64>` (default: `20`)  
+  Minimum block distance between alerts for the same pool.
+
 ## Adaptive Memory
 - `--enable-memory`  
   Enables adaptive memory match/new logic.

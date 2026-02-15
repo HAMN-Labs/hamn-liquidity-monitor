@@ -51,6 +51,12 @@ Increase real detection quality on Arbitrum mainnet data and harden runtime beha
 - Add dataset quality checks (coverage, class balance proxy, malformed ratio).
 - Prepare artifacts for iterative parser/model quality improvements.
 
+## Phase 8: Online Alerting
+- Add rule-based online alerts from extracted features.
+- Add anti-noise controls (cooldown, thresholds).
+- Expose alert controls via CLI and machine-readable events/metrics.
+- Add operator guidance for alert handling.
+
 ## Exit Criteria
 - Stable runtime in follow mode for at least 12 hours without manual restarts.
 - Non-zero feature extraction on selected DeFi-heavy ranges.

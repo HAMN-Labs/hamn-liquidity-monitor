@@ -149,6 +149,13 @@ Sequence model:
 - `--enable-sequences`
 - `--sequence-smoothing-alpha`
 
+Alerting:
+- `--enable-alerts`
+- `--alert-min-volume-ln`
+- `--alert-min-abs-imbalance`
+- `--alert-min-gas-used`
+- `--alert-cooldown-blocks`
+
 Validation baseline:
 - `--run-validation-set`
 - `--validation-set-path`
@@ -167,6 +174,7 @@ Important log lines:
 - `memory_snapshot_saved ...`
 - `preflight_started ...` / `preflight_ok ...`
 - `features_output_enabled ...` / `features_output_rotated ...`
+- `alert ...`
 
 Formatting:
 - `--log-format text` prints key-value text lines.
@@ -179,7 +187,8 @@ Formatting:
 - fetch/processing latency averages,
 - queue backpressure and queue latency,
 - RPC error count,
-- max observed block lag.
+- max observed block lag,
+- `alerts_emitted`.
 
 ## Troubleshooting
 No features extracted:

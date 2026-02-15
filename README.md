@@ -183,5 +183,6 @@ cargo run -- \
   - `docs/backlog_next_phase_05_observability_ops.md`
   - `docs/backlog_next_phase_06_packaging.md`
   - `docs/backlog_next_phase_07_data_export_labeling.md`
+  - `docs/backlog_next_phase_08_online_alerting.md`
 - Phase 1 coverage report: `docs/PHASE1_COVERAGE_REPORT.md`
 - Internal execution workflow: `docs/workflow.md`

@@ -82,9 +82,12 @@
 - [x] Создан backlog Phase 7 (`docs/backlog_next_phase_07_data_export_labeling.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
 - [x] Добавлена ротация feature-export по числу записей (`--features-out-rotate-records`) с событиями `features_output_rotated`.
 - [x] Добавлены Phase 7 артефакты данных: схема экспорта, labeling workflow, quick-stats script (`docs/FEATURE_EXPORT_SCHEMA.md`, `docs/LABELING_WORKFLOW.md`, `scripts/features_stats.sh`).
+- [x] Стартован Phase 8 online alerting: добавлены rule-based алерты (`--enable-alerts`) и threshold/cooldown параметры.
+- [x] Добавлен runtime `alert` event, metric stream `alerts` и счетчик `alerts_emitted` в `runtime_metrics`.
+- [x] Создан backlog Phase 8 (`docs/backlog_next_phase_08_online_alerting.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
 
 ### In Progress
-- [ ] Следующая итерация после закрытия Phase 7.
+- [ ] Phase 8: Online Alerting (severity levels, per-rule counters, runbook playbooks).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

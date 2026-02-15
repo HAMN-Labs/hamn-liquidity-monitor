@@ -304,3 +304,26 @@ Expected signals:
 - `total_lines=...`
 - `event_swap=...`, `event_add_liquidity=...`, `event_remove_liquidity=...`
 - `top_pool count=... pool=...`
+
+## 17. Online Alerting Profile
+Purpose: emit operational alerts for high-imbalance/high-volume liquidity events.
+
+```bash
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --start-block 359066951 \
+  --end-block 359067200 \
+  --receipt-limit 20 \
+  --enable-alerts \
+  --alert-min-volume-ln 1.0 \
+  --alert-min-abs-imbalance 0.2 \
+  --alert-min-gas-used 20000 \
+  --alert-cooldown-blocks 20 \
+  --log-format json \
+  --emit-metrics-json
+```
+
+Expected signals:
+- `alert ...` events
+- `{"type":"metric","metric":"alerts",...}` lines
+- `runtime_metrics ... alerts_emitted=...`

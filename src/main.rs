@@ -69,6 +69,21 @@ struct Cli {
     token1_decimals: u8,
 
     #[arg(long, default_value_t = false)]
+    enable_alerts: bool,
+
+    #[arg(long, default_value_t = 1.0)]
+    alert_min_volume_ln: f64,
+
+    #[arg(long, default_value_t = 0.2)]
+    alert_min_abs_imbalance: f64,
+
+    #[arg(long, default_value_t = 20_000.0)]
+    alert_min_gas_used: f64,
+
+    #[arg(long, default_value_t = 20)]
+    alert_cooldown_blocks: u64,
+
+    #[arg(long, default_value_t = false)]
     enable_sequences: bool,
 
     #[arg(long, default_value_t = 0.25)]
@@ -177,6 +192,15 @@ struct OutputConfig {
     emit_metrics_json: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AlertConfig {
+    enabled: bool,
+    min_volume_ln: f64,
+    min_abs_imbalance: f64,
+    min_gas_used: f64,
+    cooldown_blocks: u64,
+}
+
 #[derive(Debug)]
 enum PipelineMessage {
     Receipt {
@@ -210,6 +234,7 @@ struct ConsumerStats {
     recognized_logs: u64,
     unknown_topic_logs: u64,
     malformed_logs: u64,
+    alerts_emitted: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -332,10 +357,18 @@ async fn main() -> Result<()> {
         let _ = shutdown_tx.send(true);
     });
 
-    let should_extract = cli.extract_features || cli.enable_memory || cli.enable_sequences;
+    let should_extract =
+        cli.extract_features || cli.enable_memory || cli.enable_sequences || cli.enable_alerts;
     let normalization = NormalizationProfile {
         token0_decimals: cli.token0_decimals,
         token1_decimals: cli.token1_decimals,
+    };
+    let alert_config = AlertConfig {
+        enabled: cli.enable_alerts,
+        min_volume_ln: cli.alert_min_volume_ln,
+        min_abs_imbalance: cli.alert_min_abs_imbalance,
+        min_gas_used: cli.alert_min_gas_used,
+        cooldown_blocks: cli.alert_cooldown_blocks,
     };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
     let periodic_snapshot_path = cli.memory_snapshot_out.clone();
@@ -354,6 +387,7 @@ async fn main() -> Result<()> {
             snapshot_interval_blocks,
             features_out_path,
             features_out_rotate_records,
+            alert_config,
             output,
         )
         .await
@@ -709,9 +743,11 @@ async fn consume_pipeline(
     snapshot_interval_blocks: u64,
     features_out_path: Option<String>,
     features_out_rotate_records: u64,
+    alert_config: AlertConfig,
     output: OutputConfig,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
+    let mut last_alert_block_by_pool: HashMap<String, u64> = HashMap::new();
     let mut features_out_part = 0_u64;
     let mut features_out_records_in_part = 0_u64;
     let mut features_out_current_path: Option<String> = None;
@@ -888,6 +924,64 @@ async fn consume_pipeline(
                                     ("key", json!(normalized.feature.pool_address)),
                                 ],
                             );
+                        }
+
+                        if alert_config.enabled {
+                            let abs_imbalance = normalized.normalized_imbalance.abs();
+                            let gas_used = normalized.feature.gas_used as f64;
+                            let passes_thresholds = normalized.normalized_total_volume
+                                >= alert_config.min_volume_ln
+                                && abs_imbalance >= alert_config.min_abs_imbalance
+                                && gas_used >= alert_config.min_gas_used;
+                            if passes_thresholds {
+                                let pool = normalized.feature.pool_address.clone();
+                                let should_emit = match last_alert_block_by_pool.get(&pool) {
+                                    Some(last_block) => {
+                                        block_number.saturating_sub(*last_block)
+                                            >= alert_config.cooldown_blocks
+                                    }
+                                    None => true,
+                                };
+                                if should_emit {
+                                    emit_event(
+                                        &output,
+                                        "alert",
+                                        vec![
+                                            (
+                                                "kind",
+                                                json!("high_imbalance_high_volume"),
+                                            ),
+                                            ("block", json!(block_number)),
+                                            ("event", json!(event_label(&normalized.feature.event_kind))),
+                                            ("tx", json!(normalized.feature.tx_hash)),
+                                            ("pool", json!(pool.clone())),
+                                            (
+                                                "volume_ln",
+                                                json!(round_to(
+                                                    normalized.normalized_total_volume,
+                                                    6,
+                                                )),
+                                            ),
+                                            (
+                                                "abs_imbalance",
+                                                json!(round_to(abs_imbalance, 6)),
+                                            ),
+                                            ("gas_used", json!(normalized.feature.gas_used)),
+                                        ],
+                                    );
+                                    emit_metric(
+                                        &output,
+                                        "alerts",
+                                        vec![
+                                            ("block", json!(block_number)),
+                                            ("pool", json!(pool.clone())),
+                                            ("kind", json!("high_imbalance_high_volume")),
+                                        ],
+                                    );
+                                    stats.alerts_emitted = stats.alerts_emitted.saturating_add(1);
+                                    last_alert_block_by_pool.insert(pool, block_number);
+                                }
+                            }
                         }
                     }
 
@@ -1090,6 +1184,7 @@ fn print_runtime_metrics(
         ("receipts_in", json!(producer.receipts_enqueued)),
         ("receipts_processed", json!(consumer.receipts_processed)),
         ("features", json!(consumer.features_processed)),
+        ("alerts_emitted", json!(consumer.alerts_emitted)),
         ("recognized_logs", json!(consumer.recognized_logs)),
         ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
         ("malformed_logs", json!(consumer.malformed_logs)),
@@ -1199,6 +1294,7 @@ async fn run_preflight(rpc: &RpcClient, cli: &Cli, output: &OutputConfig) -> Res
             ("extract_features", json!(cli.extract_features)),
             ("enable_memory", json!(cli.enable_memory)),
             ("enable_sequences", json!(cli.enable_sequences)),
+            ("enable_alerts", json!(cli.enable_alerts)),
             ("fetch_logs", json!(cli.fetch_logs)),
             ("receipt_limit", json!(cli.receipt_limit)),
         ],
