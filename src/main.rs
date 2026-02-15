@@ -13,6 +13,7 @@ use features::extractor::{
 use ingestion::rpc::{LogFilter, RpcClient, RpcPolicy, TransactionReceipt, extract_tx_hash};
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use sequences::transition::{SequenceEventKind, TransitionModel};
+use serde_json::{Map, Value, json};
 use validation::baseline::run_validation_set;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -117,6 +118,15 @@ struct Cli {
     #[arg(long, default_value_t = 10)]
     topic0_top_n: usize,
 
+    #[arg(long, value_enum, default_value_t = LogFormat::Text)]
+    log_format: LogFormat,
+
+    #[arg(long, default_value_t = false)]
+    emit_metrics_json: bool,
+
+    #[arg(long, default_value_t = false)]
+    skip_preflight: bool,
+
     #[arg(long, default_value_t = 100)]
     heartbeat_interval_blocks: u64,
 
@@ -143,6 +153,18 @@ struct Cli {
 enum ErrorMode {
     FailSoft,
     FailFast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LogFormat {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OutputConfig {
+    log_format: LogFormat,
+    emit_metrics_json: bool,
 }
 
 #[derive(Debug)]
@@ -191,6 +213,10 @@ struct ConsumerOutput {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let output = OutputConfig {
+        log_format: cli.log_format,
+        emit_metrics_json: cli.emit_metrics_json,
+    };
 
     if cli.run_validation_set {
         let report = run_validation_set(
@@ -198,17 +224,36 @@ async fn main() -> Result<()> {
             cli.validation_min_precision,
             cli.validation_min_recall,
         )?;
-        println!(
-            "validation_status=pass cases={} tp={} fp={} fn={} precision_proxy={:.4} recall_proxy={:.4} recognized_logs={} unknown_topic_logs={} malformed_logs={}",
-            report.cases,
-            report.tp,
-            report.fp,
-            report.fn_,
-            report.precision_proxy,
-            report.recall_proxy,
-            report.recognized_logs,
-            report.unknown_topic_logs,
-            report.malformed_logs,
+        emit_event(
+            &output,
+            "validation_status",
+            vec![
+                ("status", json!("pass")),
+                ("cases", json!(report.cases)),
+                ("tp", json!(report.tp)),
+                ("fp", json!(report.fp)),
+                ("fn", json!(report.fn_)),
+                ("precision_proxy", json!(round_to(report.precision_proxy, 6))),
+                ("recall_proxy", json!(round_to(report.recall_proxy, 6))),
+                ("recognized_logs", json!(report.recognized_logs)),
+                ("unknown_topic_logs", json!(report.unknown_topic_logs)),
+                ("malformed_logs", json!(report.malformed_logs)),
+            ],
+        );
+        emit_metric(
+            &output,
+            "validation_metrics",
+            vec![
+                ("cases", json!(report.cases)),
+                ("tp", json!(report.tp)),
+                ("fp", json!(report.fp)),
+                ("fn", json!(report.fn_)),
+                ("precision_proxy", json!(round_to(report.precision_proxy, 6))),
+                ("recall_proxy", json!(round_to(report.recall_proxy, 6))),
+                ("recognized_logs", json!(report.recognized_logs)),
+                ("unknown_topic_logs", json!(report.unknown_topic_logs)),
+                ("malformed_logs", json!(report.malformed_logs)),
+            ],
         );
         return Ok(());
     }
@@ -235,6 +280,7 @@ async fn main() -> Result<()> {
         max_backoff_ms: cli.rpc_max_backoff_ms,
     };
     let rpc = RpcClient::new_with_policy(rpc_url, policy);
+    run_preflight(&rpc, &cli, &output).await?;
 
     let stabilization = StabilizationConfig {
         confidence_decay_per_block: cli.memory_decay_per_block,
@@ -294,6 +340,7 @@ async fn main() -> Result<()> {
             normalization,
             periodic_snapshot_path,
             snapshot_interval_blocks,
+            output,
         )
         .await
     });
@@ -305,7 +352,11 @@ async fn main() -> Result<()> {
     let mut next_block = cli.start_block;
     loop {
         if *shutdown_rx.borrow() {
-            println!("shutdown_signal_received stage=producer");
+            emit_event(
+                &output,
+                "shutdown_signal_received",
+                vec![("stage", json!("producer"))],
+            );
             break;
         }
         if next_block > end_block {
@@ -321,7 +372,11 @@ async fn main() -> Result<()> {
                     tokio::select! {
                         _ = sleep(Duration::from_millis(cli.poll_interval_ms)) => {},
                         _ = wait_for_shutdown_change(&shutdown_rx) => {
-                            println!("shutdown_signal_received stage=producer_poll_wait");
+                            emit_event(
+                                &output,
+                                "shutdown_signal_received",
+                                vec![("stage", json!("producer_poll_wait"))],
+                            );
                             break;
                         }
                     }
@@ -336,7 +391,11 @@ async fn main() -> Result<()> {
             tokio::select! {
                 _ = sleep(Duration::from_millis(cli.poll_interval_ms)) => {},
                 _ = wait_for_shutdown_change(&shutdown_rx) => {
-                    println!("shutdown_signal_received stage=producer_idle_wait");
+                    emit_event(
+                        &output,
+                        "shutdown_signal_received",
+                        vec![("stage", json!("producer_idle_wait"))],
+                    );
                     break;
                 }
             }
@@ -345,7 +404,11 @@ async fn main() -> Result<()> {
 
         while next_block <= target_end {
             if *shutdown_rx.borrow() {
-                println!("shutdown_signal_received stage=producer_block_loop");
+                emit_event(
+                    &output,
+                    "shutdown_signal_received",
+                    vec![("stage", json!("producer_block_loop"))],
+                );
                 break;
             }
             let block_lag = target_end.saturating_sub(next_block);
@@ -357,6 +420,7 @@ async fn main() -> Result<()> {
                 &tx,
                 &mut producer_stats,
                 cli.error_mode,
+                &output,
             )
             .await?;
             heartbeat_blocks = heartbeat_blocks.saturating_add(1);
@@ -364,16 +428,25 @@ async fn main() -> Result<()> {
                 && cli.heartbeat_interval_blocks > 0
                 && heartbeat_blocks % cli.heartbeat_interval_blocks == 0
             {
-                println!(
-                    "heartbeat block={} target_end={} lag={} blocks_processed={} receipts_enqueued={} rpc_errors={} queue_capacity={} error_mode={:?}",
-                    next_block,
-                    target_end,
-                    block_lag,
-                    producer_stats.blocks_processed,
-                    producer_stats.receipts_enqueued,
-                    producer_stats.rpc_errors,
-                    queue_capacity,
-                    cli.error_mode
+                emit_event(
+                    &output,
+                    "heartbeat",
+                    vec![
+                        ("block", json!(next_block)),
+                        ("target_end", json!(target_end)),
+                        ("lag", json!(block_lag)),
+                        ("blocks_processed", json!(producer_stats.blocks_processed)),
+                        ("receipts_enqueued", json!(producer_stats.receipts_enqueued)),
+                        ("rpc_errors", json!(producer_stats.rpc_errors)),
+                        ("queue_capacity", json!(queue_capacity)),
+                        (
+                            "error_mode",
+                            json!(match cli.error_mode {
+                                ErrorMode::FailSoft => "fail_soft",
+                                ErrorMode::FailFast => "fail_fast",
+                            }),
+                        ),
+                    ],
                 );
             }
             next_block += 1;
@@ -392,15 +465,24 @@ async fn main() -> Result<()> {
 
     if let (Some(memory), Some(path)) = (&consumer_output.memory, &cli.memory_snapshot_out) {
         memory.save_snapshot(path)?;
-        println!(
-            "memory_snapshot_saved path={} patterns={}",
-            path,
-            memory.pattern_count()
+        emit_event(
+            &output,
+            "memory_snapshot_saved",
+            vec![
+                ("mode", json!("final")),
+                ("path", json!(path)),
+                ("patterns", json!(memory.pattern_count())),
+            ],
         );
     }
 
-    print_runtime_metrics(runtime_started.elapsed(), &producer_stats, &consumer_output.stats);
-    print_topic0_summary(&producer_stats, cli.topic0_top_n);
+    print_runtime_metrics(
+        runtime_started.elapsed(),
+        &producer_stats,
+        &consumer_output.stats,
+        &output,
+    );
+    print_topic0_summary(&producer_stats, cli.topic0_top_n, &output);
 
     Ok(())
 }
@@ -413,13 +495,21 @@ async fn ingest_block_to_pipeline(
     tx: &mpsc::Sender<PipelineMessage>,
     stats: &mut ProducerStats,
     error_mode: ErrorMode,
+    output: &OutputConfig,
 ) -> Result<()> {
     let block_started = Instant::now();
     let block = match rpc.get_block_by_number(block_number, cli.full_tx).await {
         Ok(block) => block,
         Err(err) => {
             stats.rpc_errors = stats.rpc_errors.saturating_add(1);
-            eprintln!("block_fetch_error block={} error={}", block_number, err);
+            emit_event(
+                output,
+                "block_fetch_error",
+                vec![
+                    ("block", json!(block_number)),
+                    ("error", json!(err.to_string())),
+                ],
+            );
             if error_mode == ErrorMode::FailFast {
                 return Err(err).context("fail-fast: block fetch error");
             }
@@ -438,13 +528,17 @@ async fn ingest_block_to_pipeline(
         }
     }
 
-    println!(
-        "block={} hash={} parent={} txs={} timestamp={}",
-        block.number,
-        block.hash.as_deref().unwrap_or("<none>"),
-        block.parent_hash,
-        block.transactions.len(),
-        block.timestamp,
+    emit_event(
+        output,
+        "block",
+        vec![
+            ("number", json!(block.number)),
+            ("hash", json!(block.hash.as_deref().unwrap_or("<none>"))),
+            ("parent_hash", json!(block.parent_hash)),
+            ("txs", json!(block.transactions.len())),
+            ("timestamp", json!(block.timestamp)),
+            ("lag", json!(block_lag)),
+        ],
     );
 
     if cli.fetch_logs {
@@ -479,28 +573,41 @@ async fn ingest_block_to_pipeline(
                         *count = count.saturating_add(1);
                     }
                 }
-                println!(
-                    "logs_range={}..={} total_logs={} topic0_filters={} address_filters={}",
-                    block_number,
-                    block_number,
-                    logs.len(),
-                    cli.log_topic0.len(),
-                    cli.log_address.len(),
+                emit_event(
+                    output,
+                    "logs_fetched",
+                    vec![
+                        ("from_block", json!(block_number)),
+                        ("to_block", json!(block_number)),
+                        ("total_logs", json!(logs.len())),
+                        ("topic0_filters", json!(cli.log_topic0.len())),
+                        ("address_filters", json!(cli.log_address.len())),
+                    ],
                 );
                 if let Some(first_log) = logs.first() {
-                    println!(
-                        "first_log block={} tx={} address={} topics={} data_len={}",
-                        first_log.block_number,
-                        first_log.transaction_hash,
-                        first_log.address,
-                        first_log.topics.len(),
-                        first_log.data.len(),
+                    emit_event(
+                        output,
+                        "first_log",
+                        vec![
+                            ("block", json!(first_log.block_number)),
+                            ("tx", json!(first_log.transaction_hash)),
+                            ("address", json!(first_log.address)),
+                            ("topics", json!(first_log.topics.len())),
+                            ("data_len", json!(first_log.data.len())),
+                        ],
                     );
                 }
             }
             Err(err) => {
                 stats.rpc_errors = stats.rpc_errors.saturating_add(1);
-                eprintln!("logs_fetch_error block={} error={}", block_number, err);
+                emit_event(
+                    output,
+                    "logs_fetch_error",
+                    vec![
+                        ("block", json!(block_number)),
+                        ("error", json!(err.to_string())),
+                    ],
+                );
                 if error_mode == ErrorMode::FailFast {
                     return Err(err).context("fail-fast: logs fetch error");
                 }
@@ -516,7 +623,11 @@ async fn ingest_block_to_pipeline(
                 Ok(value) => value,
                 Err(err) => {
                     stats.rpc_errors = stats.rpc_errors.saturating_add(1);
-                    eprintln!("receipt_fetch_error tx={} error={}", tx_hash, err);
+                    emit_event(
+                        output,
+                        "receipt_fetch_error",
+                        vec![("tx", json!(tx_hash)), ("error", json!(err.to_string()))],
+                    );
                     if error_mode == ErrorMode::FailFast {
                         return Err(err).context("fail-fast: receipt fetch error");
                     }
@@ -528,13 +639,16 @@ async fn ingest_block_to_pipeline(
                 .saturating_add(receipt_started.elapsed().as_millis());
 
             if let Some(receipt) = receipt_opt {
-                println!(
-                    "receipt tx={} block={} gas_used={} status={} logs={}",
-                    receipt.transaction_hash,
-                    receipt.block_number,
-                    receipt.gas_used,
-                    receipt.status,
-                    receipt.logs.len(),
+                emit_event(
+                    output,
+                    "receipt",
+                    vec![
+                        ("tx", json!(receipt.transaction_hash)),
+                        ("block", json!(receipt.block_number)),
+                        ("gas_used", json!(receipt.gas_used)),
+                        ("status", json!(receipt.status)),
+                        ("logs", json!(receipt.logs.len())),
+                    ],
                 );
 
                 let enqueued_at = Instant::now();
@@ -553,7 +667,11 @@ async fn ingest_block_to_pipeline(
                 fetched += 1;
             }
         }
-        println!("receipts_fetched={fetched}");
+        emit_event(
+            output,
+            "receipts_fetched",
+            vec![("count", json!(fetched)), ("block", json!(block_number))],
+        );
     }
 
     tx.send(PipelineMessage::BlockBoundary {
@@ -575,6 +693,7 @@ async fn consume_pipeline(
     normalization: NormalizationProfile,
     periodic_snapshot_path: Option<String>,
     snapshot_interval_blocks: u64,
+    output: OutputConfig,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
 
@@ -593,7 +712,15 @@ async fn consume_pipeline(
                 if should_extract_features {
                     let started = Instant::now();
                     let (features, extraction_stats) = extract_features_with_stats(&receipt);
-                    println!("features_extracted={}", features.len());
+                    emit_event(
+                        &output,
+                        "features_extracted",
+                        vec![
+                            ("count", json!(features.len())),
+                            ("tx", json!(receipt.transaction_hash)),
+                            ("block", json!(block_number)),
+                        ],
+                    );
                     stats.features_processed = stats
                         .features_processed
                         .saturating_add(features.len() as u64);
@@ -606,24 +733,37 @@ async fn consume_pipeline(
                     stats.malformed_logs = stats
                         .malformed_logs
                         .saturating_add(extraction_stats.malformed_logs);
-                    println!(
-                        "feature_extraction_stats logs_total={} recognized={} unknown_topic={} malformed={}",
-                        extraction_stats.logs_total,
-                        extraction_stats.recognized_logs,
-                        extraction_stats.unknown_topic_logs,
-                        extraction_stats.malformed_logs,
+                    emit_event(
+                        &output,
+                        "feature_extraction_stats",
+                        vec![
+                            ("logs_total", json!(extraction_stats.logs_total)),
+                            ("recognized", json!(extraction_stats.recognized_logs)),
+                            ("unknown_topic", json!(extraction_stats.unknown_topic_logs)),
+                            ("malformed", json!(extraction_stats.malformed_logs)),
+                            ("tx", json!(receipt.transaction_hash)),
+                        ],
                     );
 
                     for feature in features {
                         let normalized = normalize_feature_with_profile(feature, normalization);
-                        println!(
-                            "feature event={} tx={} pool={} volume_ln={:.6} imbalance={:.6} gas_ln={:.6}",
-                            event_label(&normalized.feature.event_kind),
-                            normalized.feature.tx_hash,
-                            normalized.feature.pool_address,
-                            normalized.normalized_total_volume,
-                            normalized.normalized_imbalance,
-                            normalized.normalized_gas,
+                        emit_event(
+                            &output,
+                            "feature",
+                            vec![
+                                ("event", json!(event_label(&normalized.feature.event_kind))),
+                                ("tx", json!(normalized.feature.tx_hash)),
+                                ("pool", json!(normalized.feature.pool_address)),
+                                (
+                                    "volume_ln",
+                                    json!(round_to(normalized.normalized_total_volume, 6)),
+                                ),
+                                (
+                                    "imbalance",
+                                    json!(round_to(normalized.normalized_imbalance, 6)),
+                                ),
+                                ("gas_ln", json!(round_to(normalized.normalized_gas, 6))),
+                            ],
                         );
 
                         if let Some(memory) = memory.as_mut() {
@@ -633,13 +773,22 @@ async fn consume_pipeline(
                                     distance,
                                     confidence,
                                 } => {
-                                    println!(
-                                        "memory matched pattern_id={} distance={:.6} confidence={:.4}",
-                                        pattern_id, distance, confidence
+                                    emit_event(
+                                        &output,
+                                        "memory_matched",
+                                        vec![
+                                            ("pattern_id", json!(pattern_id)),
+                                            ("distance", json!(round_to(distance, 6))),
+                                            ("confidence", json!(round_to(confidence, 6))),
+                                        ],
                                     );
                                 }
                                 MatchOutcome::Created { pattern_id } => {
-                                    println!("memory created pattern_id={}", pattern_id);
+                                    emit_event(
+                                        &output,
+                                        "memory_created",
+                                        vec![("pattern_id", json!(pattern_id))],
+                                    );
                                 }
                             }
                         }
@@ -648,11 +797,14 @@ async fn consume_pipeline(
                             let event =
                                 SequenceEventKind::from_liquidity_event(&normalized.feature.event_kind);
                             sequences.observe_entity_event(normalized.feature.pool_address.clone(), event);
-                            println!(
-                                "sequence_observe block={} event={} key={}",
-                                block_number,
-                                event.as_str(),
-                                normalized.feature.pool_address,
+                            emit_event(
+                                &output,
+                                "sequence_observe",
+                                vec![
+                                    ("block", json!(block_number)),
+                                    ("event", json!(event.as_str())),
+                                    ("key", json!(normalized.feature.pool_address)),
+                                ],
                             );
                         }
                     }
@@ -671,17 +823,35 @@ async fn consume_pipeline(
                 if let Some(memory) = memory.as_mut() {
                     let pruned = memory.stabilize(block_number);
                     let metrics = memory.metrics();
-                    println!(
-                        "memory_metrics block={} active_patterns={} match_ratio={:.4} churn_rate={:.4} pruned_now={} total_obs={} matched={} created={} pruned_total={}",
-                        block_number,
-                        metrics.active_patterns,
-                        metrics.match_ratio,
-                        metrics.churn_rate,
-                        pruned,
-                        metrics.total_observations,
-                        metrics.matched_observations,
-                        metrics.created_observations,
-                        metrics.pruned_patterns_total,
+                    emit_event(
+                        &output,
+                        "memory_metrics",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("active_patterns", json!(metrics.active_patterns)),
+                            ("match_ratio", json!(round_to(metrics.match_ratio, 6))),
+                            ("churn_rate", json!(round_to(metrics.churn_rate, 6))),
+                            ("pruned_now", json!(pruned)),
+                            ("total_obs", json!(metrics.total_observations)),
+                            ("matched", json!(metrics.matched_observations)),
+                            ("created", json!(metrics.created_observations)),
+                            ("pruned_total", json!(metrics.pruned_patterns_total)),
+                        ],
+                    );
+                    emit_metric(
+                        &output,
+                        "memory_metrics",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("active_patterns", json!(metrics.active_patterns)),
+                            ("match_ratio", json!(round_to(metrics.match_ratio, 6))),
+                            ("churn_rate", json!(round_to(metrics.churn_rate, 6))),
+                            ("pruned_now", json!(pruned)),
+                            ("total_obs", json!(metrics.total_observations)),
+                            ("matched", json!(metrics.matched_observations)),
+                            ("created", json!(metrics.created_observations)),
+                            ("pruned_total", json!(metrics.pruned_patterns_total)),
+                        ],
                     );
                 }
 
@@ -701,15 +871,31 @@ async fn consume_pipeline(
                         SequenceEventKind::RemoveLiquidity,
                         smoothing_alpha,
                     );
-                    println!(
-                        "sequence_metrics block={} entities={} total_transitions={} unique_transitions={} p_swap_add_raw={:.4} p_swap_add={:.4} p_add_remove={:.4}",
-                        block_number,
-                        metrics.tracked_entities,
-                        metrics.total_transitions,
-                        metrics.unique_transitions,
-                        raw_swap_to_add,
-                        swap_to_add,
-                        add_to_remove,
+                    emit_event(
+                        &output,
+                        "sequence_metrics",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("entities", json!(metrics.tracked_entities)),
+                            ("total_transitions", json!(metrics.total_transitions)),
+                            ("unique_transitions", json!(metrics.unique_transitions)),
+                            ("p_swap_add_raw", json!(round_to(raw_swap_to_add, 6))),
+                            ("p_swap_add", json!(round_to(swap_to_add, 6))),
+                            ("p_add_remove", json!(round_to(add_to_remove, 6))),
+                        ],
+                    );
+                    emit_metric(
+                        &output,
+                        "sequence_metrics",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("entities", json!(metrics.tracked_entities)),
+                            ("total_transitions", json!(metrics.total_transitions)),
+                            ("unique_transitions", json!(metrics.unique_transitions)),
+                            ("p_swap_add_raw", json!(round_to(raw_swap_to_add, 6))),
+                            ("p_swap_add", json!(round_to(swap_to_add, 6))),
+                            ("p_add_remove", json!(round_to(add_to_remove, 6))),
+                        ],
                     );
                 }
 
@@ -723,11 +909,15 @@ async fn consume_pipeline(
                         memory
                             .save_snapshot(path)
                             .with_context(|| format!("failed periodic snapshot at block={block_number}"))?;
-                        println!(
-                            "memory_snapshot_saved mode=periodic block={} path={} patterns={}",
-                            block_number,
-                            path,
-                            memory.pattern_count()
+                        emit_event(
+                            &output,
+                            "memory_snapshot_saved",
+                            vec![
+                                ("mode", json!("periodic")),
+                                ("block", json!(block_number)),
+                                ("path", json!(path)),
+                                ("patterns", json!(memory.pattern_count())),
+                            ],
                         );
                     }
                 }
@@ -741,7 +931,12 @@ async fn consume_pipeline(
     })
 }
 
-fn print_runtime_metrics(elapsed: Duration, producer: &ProducerStats, consumer: &ConsumerStats) {
+fn print_runtime_metrics(
+    elapsed: Duration,
+    producer: &ProducerStats,
+    consumer: &ConsumerStats,
+    output: &OutputConfig,
+) {
     let elapsed_secs = elapsed.as_secs_f64().max(0.001);
 
     let avg_block_fetch_ms = if producer.blocks_processed == 0 {
@@ -796,30 +991,34 @@ fn print_runtime_metrics(elapsed: Duration, producer: &ProducerStats, consumer: 
         consumer.features_processed as f64 / producer.receipts_enqueued as f64
     };
 
-    println!(
-        "runtime_metrics elapsed_s={:.3} blocks={} receipts_in={} receipts_processed={} features={} recognized_logs={} unknown_topic_logs={} malformed_logs={} throughput_rps={:.3} avg_block_fetch_ms={:.3} avg_receipt_fetch_ms={:.3} avg_queue_backpressure_ms={:.3} avg_queue_latency_ms={:.3} avg_processing_ms={:.3} logs_total={} logs_per_block={:.3} log_hit_ratio={:.3} features_per_block={:.3} feature_hit_ratio={:.3} rpc_errors={} max_block_lag={}",
-        elapsed_secs,
-        producer.blocks_processed,
-        producer.receipts_enqueued,
-        consumer.receipts_processed,
-        consumer.features_processed,
-        consumer.recognized_logs,
-        consumer.unknown_topic_logs,
-        consumer.malformed_logs,
-        throughput_rps,
-        avg_block_fetch_ms,
-        avg_receipt_fetch_ms,
-        avg_queue_backpressure_ms,
-        avg_queue_latency_ms,
-        avg_processing_ms,
-        producer.logs_fetched_total,
-        logs_per_block,
-        log_hit_ratio,
-        features_per_block,
-        feature_hit_ratio,
-        producer.rpc_errors,
-        consumer.max_block_lag,
-    );
+    let fields = vec![
+        ("elapsed_s", json!(round_to(elapsed_secs, 6))),
+        ("blocks", json!(producer.blocks_processed)),
+        ("receipts_in", json!(producer.receipts_enqueued)),
+        ("receipts_processed", json!(consumer.receipts_processed)),
+        ("features", json!(consumer.features_processed)),
+        ("recognized_logs", json!(consumer.recognized_logs)),
+        ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
+        ("malformed_logs", json!(consumer.malformed_logs)),
+        ("throughput_rps", json!(round_to(throughput_rps, 6))),
+        ("avg_block_fetch_ms", json!(round_to(avg_block_fetch_ms, 6))),
+        ("avg_receipt_fetch_ms", json!(round_to(avg_receipt_fetch_ms, 6))),
+        (
+            "avg_queue_backpressure_ms",
+            json!(round_to(avg_queue_backpressure_ms, 6)),
+        ),
+        ("avg_queue_latency_ms", json!(round_to(avg_queue_latency_ms, 6))),
+        ("avg_processing_ms", json!(round_to(avg_processing_ms, 6))),
+        ("logs_total", json!(producer.logs_fetched_total)),
+        ("logs_per_block", json!(round_to(logs_per_block, 6))),
+        ("log_hit_ratio", json!(round_to(log_hit_ratio, 6))),
+        ("features_per_block", json!(round_to(features_per_block, 6))),
+        ("feature_hit_ratio", json!(round_to(feature_hit_ratio, 6))),
+        ("rpc_errors", json!(producer.rpc_errors)),
+        ("max_block_lag", json!(consumer.max_block_lag)),
+    ];
+    emit_event(output, "runtime_metrics", fields.clone());
+    emit_metric(output, "runtime_metrics", fields);
 }
 
 fn event_label(kind: &LiquidityEventKind) -> &'static str {
@@ -830,7 +1029,7 @@ fn event_label(kind: &LiquidityEventKind) -> &'static str {
     }
 }
 
-fn print_topic0_summary(producer: &ProducerStats, top_n: usize) {
+fn print_topic0_summary(producer: &ProducerStats, top_n: usize, output: &OutputConfig) {
     if producer.topic0_counts.is_empty() || top_n == 0 {
         return;
     }
@@ -839,13 +1038,128 @@ fn print_topic0_summary(producer: &ProducerStats, top_n: usize) {
     rows.sort_by(|a, b| b.1.cmp(a.1));
 
     for (rank, (topic, count)) in rows.into_iter().take(top_n).enumerate() {
-        println!(
-            "topic0_top rank={} count={} topic={}",
-            rank + 1,
-            count,
-            topic
+        emit_event(
+            output,
+            "topic0_top",
+            vec![
+                ("rank", json!(rank + 1)),
+                ("count", json!(count)),
+                ("topic", json!(topic)),
+            ],
         );
     }
+}
+
+async fn run_preflight(rpc: &RpcClient, cli: &Cli, output: &OutputConfig) -> Result<()> {
+    if cli.skip_preflight {
+        emit_event(
+            output,
+            "preflight_skipped",
+            vec![("reason", json!("--skip-preflight enabled"))],
+        );
+        return Ok(());
+    }
+
+    emit_event(
+        output,
+        "preflight_started",
+        vec![
+            ("start_block", json!(cli.start_block)),
+            ("end_block", json!(cli.end_block)),
+            ("follow", json!(cli.follow)),
+        ],
+    );
+
+    let latest = rpc
+        .get_latest_block_number()
+        .await
+        .context("preflight failed to fetch latest block")?;
+
+    if !cli.follow && cli.start_block > latest {
+        anyhow::bail!(
+            "preflight failed: start_block ({}) > latest ({})",
+            cli.start_block,
+            latest
+        );
+    }
+
+    if let Some(end_block) = cli.end_block {
+        if !cli.follow && end_block > latest {
+            emit_event(
+                output,
+                "preflight_warning",
+                vec![
+                    ("kind", json!("end_block_above_latest")),
+                    ("end_block", json!(end_block)),
+                    ("latest", json!(latest)),
+                ],
+            );
+        }
+    }
+
+    emit_event(
+        output,
+        "preflight_ok",
+        vec![
+            ("latest_block", json!(latest)),
+            ("queue_capacity", json!(cli.pipeline_queue_capacity.max(1))),
+            ("extract_features", json!(cli.extract_features)),
+            ("enable_memory", json!(cli.enable_memory)),
+            ("enable_sequences", json!(cli.enable_sequences)),
+            ("fetch_logs", json!(cli.fetch_logs)),
+            ("receipt_limit", json!(cli.receipt_limit)),
+        ],
+    );
+
+    Ok(())
+}
+
+fn emit_event(output: &OutputConfig, event: &str, fields: Vec<(&str, Value)>) {
+    match output.log_format {
+        LogFormat::Text => {
+            let mut parts = Vec::with_capacity(fields.len() + 1);
+            parts.push(event.to_string());
+            for (key, value) in fields {
+                parts.push(format!("{}={}", key, value_to_text(&value)));
+            }
+            println!("{}", parts.join(" "));
+        }
+        LogFormat::Json => {
+            let mut obj = Map::new();
+            obj.insert("type".to_string(), json!("event"));
+            obj.insert("event".to_string(), json!(event));
+            for (key, value) in fields {
+                obj.insert(key.to_string(), value);
+            }
+            println!("{}", Value::Object(obj));
+        }
+    }
+}
+
+fn emit_metric(output: &OutputConfig, metric: &str, fields: Vec<(&str, Value)>) {
+    if !output.emit_metrics_json {
+        return;
+    }
+
+    let mut obj = Map::new();
+    obj.insert("type".to_string(), json!("metric"));
+    obj.insert("metric".to_string(), json!(metric));
+    for (key, value) in fields {
+        obj.insert(key.to_string(), value);
+    }
+    println!("{}", Value::Object(obj));
+}
+
+fn value_to_text(value: &Value) -> String {
+    match value {
+        Value::String(v) => v.clone(),
+        _ => value.to_string(),
+    }
+}
+
+fn round_to(value: f64, digits: usize) -> f64 {
+    let multiplier = 10_f64.powi(digits as i32);
+    (value * multiplier).round() / multiplier
 }
 
 async fn wait_for_shutdown_change(shutdown_rx: &watch::Receiver<bool>) {

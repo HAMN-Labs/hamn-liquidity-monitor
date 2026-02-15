@@ -70,6 +70,12 @@ cargo run -- [OPTIONS]
   Bounded queue size between ingestion producer and processing consumer.
 - `--topic0-top-n <USIZE>` (default: `10`)  
   Prints top-N observed `topic0` signatures from fetched logs.
+- `--log-format <text|json>` (default: `text`)  
+  Runtime event output format.
+- `--emit-metrics-json`  
+  Emits machine-readable JSON metric records (`type=metric`) for `runtime_metrics`, `memory_metrics`, `sequence_metrics`, and `validation_metrics`.
+- `--skip-preflight`  
+  Skips startup RPC preflight checks.
 - `--heartbeat-interval-blocks <U64>` (default: `100`)  
   Emits follow-mode heartbeat every N processed blocks.
 - `--snapshot-interval-blocks <U64>` (default: `0`)  

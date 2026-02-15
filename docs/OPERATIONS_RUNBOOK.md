@@ -2,6 +2,7 @@
 
 ## Startup Checklist
 1. Confirm `HAMN_RPC_URL` is set and valid.
+2. Run preflight (default behavior, do not pass `--skip-preflight` unless intentionally bypassing checks).
 2. Choose a block range with expected DeFi activity.
 3. Decide runtime mode:
    - replay (`--start-block`, `--end-block`)
@@ -13,6 +14,9 @@
    - `--extract-features`
    - `--enable-memory`
    - `--enable-sequences`
+6. Decide observability format:
+   - text logs (`--log-format text`)
+   - structured logs (`--log-format json --emit-metrics-json`)
 
 ## Recommended Production-Like Command
 ```bash
@@ -43,6 +47,24 @@ cargo run -- \
 - `sequence_metrics`:
   - `total_transitions`
   - `unique_transitions`
+- preflight:
+  - `preflight_started`
+  - `preflight_ok`
+  - `preflight_warning`
+
+## Tuning Table
+- Goal: reduce RPC failures
+  Action: increase `--rpc-timeout-ms`, `--rpc-max-retries`, `--rpc-max-backoff-ms`
+  Watch: `rpc_errors`
+- Goal: reduce pipeline lag
+  Action: increase `--pipeline-queue-capacity`, reduce `--receipt-limit`
+  Watch: `max_block_lag`, `avg_queue_backpressure_ms`
+- Goal: reduce memory noise
+  Action: increase `--memory-min-confidence`, reduce `--memory-max-inactive-blocks`
+  Watch: `memory_metrics.churn_rate`
+- Goal: monitoring integration
+  Action: use `--log-format json --emit-metrics-json`
+  Watch: `type=metric` stream ingestion in your collector
 
 ## Incident Response
 ### High RPC Errors
@@ -50,11 +72,13 @@ cargo run -- \
   - `--rpc-timeout-ms`
   - `--rpc-max-retries`
 - Verify provider rate limits and API key status.
+- If failures must halt the process, use `--error-mode fail-fast`.
 
 ### Persistent Block Lag
 - Increase `--pipeline-queue-capacity`.
 - Reduce `--receipt-limit`.
 - Raise poll interval in follow mode.
+- Verify queue pressure through `avg_queue_backpressure_ms`.
 
 ### No Features Extracted
 - Move to a DeFi-heavy block range.
@@ -65,6 +89,11 @@ cargo run -- \
 - Increase `--memory-min-confidence`.
 - Decrease `--memory-max-inactive-blocks`.
 - Increase `--memory-distance-threshold` only if over-fragmentation is observed.
+
+### Invalid Startup Range
+- Inspect preflight output (`preflight_warning` or preflight failure message).
+- Fix `--start-block/--end-block` relative to current chain tip.
+- Use `--skip-preflight` only for intentional dry-run behavior.
 
 ## Shutdown
 1. Stop process gracefully.

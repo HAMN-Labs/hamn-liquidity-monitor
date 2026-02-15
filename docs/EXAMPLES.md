@@ -233,3 +233,25 @@ Expected signals:
 - `heartbeat block=...`
 - `memory_snapshot_saved mode=periodic ...`
 - final `runtime_metrics ...`
+
+## 13. JSON Observability Profile
+Purpose: emit structured events and machine-readable metrics.
+
+```bash
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --start-block 359066951 \
+  --end-block 359066952 \
+  --fetch-logs \
+  --receipt-limit 5 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences \
+  --log-format json \
+  --emit-metrics-json
+```
+
+Expected signals:
+- JSON event records (`{"type":"event","event":"block",...}`)
+- JSON metric records (`{"type":"metric","metric":"runtime_metrics",...}`)
+- startup preflight records (`preflight_started`, `preflight_ok`)

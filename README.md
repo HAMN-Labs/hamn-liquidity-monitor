@@ -149,6 +149,21 @@ cargo run -- \
   --error-mode fail-soft
 ```
 
+```bash
+# Structured observability (JSON events + JSON metrics)
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --start-block 359066951 \
+  --end-block 359066952 \
+  --fetch-logs \
+  --receipt-limit 5 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences \
+  --log-format json \
+  --emit-metrics-json
+```
+
 ## Documentation
 - User guide (English): `docs/USER_GUIDE.md`
 - CLI reference (English): `docs/CLI_REFERENCE.md`

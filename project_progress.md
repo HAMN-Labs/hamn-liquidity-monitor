@@ -70,9 +70,13 @@
 - [x] Добавлен graceful shutdown по сигналу с финальным flush.
 - [x] Добавлены periodic memory snapshots (`--snapshot-interval-blocks` + `--memory-snapshot-out`).
 - [x] Добавлен runtime error policy (`--error-mode fail-soft|fail-fast`).
+- [x] Реализован Phase 5 JSON event mode (`--log-format text|json`).
+- [x] Добавлен machine-readable metrics stream (`--emit-metrics-json`) для `runtime/memory/sequence/validation` метрик.
+- [x] Добавлен startup preflight с опциональным bypass (`--skip-preflight`).
+- [x] Обновлены англоязычные docs для observability/operations (`README.md`, `docs/CLI_REFERENCE.md`, `docs/USER_GUIDE.md`, `docs/EXAMPLES.md`, `docs/OPERATIONS_RUNBOOK.md`).
 
 ### In Progress
-- [ ] Phase 5: observability and operations (structured JSON logs + machine-readable metrics stream).
+- [ ] Phase 6: packaging and deployment profiles.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

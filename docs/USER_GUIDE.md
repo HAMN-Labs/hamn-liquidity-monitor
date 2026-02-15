@@ -115,6 +115,9 @@ RPC reliability:
 Pipeline control:
 - `--pipeline-queue-capacity`
 - `--topic0-top-n`
+- `--log-format`
+- `--emit-metrics-json`
+- `--skip-preflight`
 - `--heartbeat-interval-blocks`
 - `--snapshot-interval-blocks`
 - `--error-mode`
@@ -148,14 +151,21 @@ Validation baseline:
 
 ## Runtime Output
 Important log lines:
-- `block=...` / `receipt tx=...` / `features_extracted=...`
-- `feature_extraction_stats logs_total=... recognized=... unknown_topic=... malformed=...`
+- `block ...` / `receipt ...` / `features_extracted ...`
+- `feature_extraction_stats ...`
 - `memory_metrics ...`
 - `sequence_metrics ...`
 - `runtime_metrics ...`
-- `topic0_top rank=... count=... topic=...`
-- `heartbeat block=...`
-- `memory_snapshot_saved mode=periodic ...`
+- `topic0_top ...`
+- `heartbeat ...`
+- `memory_snapshot_saved ...`
+- `preflight_started ...` / `preflight_ok ...`
+
+Formatting:
+- `--log-format text` prints key-value text lines.
+- `--log-format json` prints structured JSON events (`{"type":"event","event":"..."}`).
+- `--emit-metrics-json` adds dedicated metric JSON lines (`{"type":"metric","metric":"..."}`) for ingestion by monitoring systems.
+- `--skip-preflight` disables startup chain connectivity/range checks.
 
 `runtime_metrics` includes:
 - throughput (`throughput_rps`),
