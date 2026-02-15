@@ -36,6 +36,7 @@ cargo run --release -- \
 ## Preset Scripts
 - Replay profile: `scripts/run_replay_profile.sh`
 - Follow profile: `scripts/run_follow_profile.sh`
+- Follow maintenance profile: `scripts/run_follow_maintenance_profile.sh`
 
 Both scripts require:
 - `HAMN_RPC_URL` env variable.

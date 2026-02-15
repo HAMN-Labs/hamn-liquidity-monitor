@@ -16,7 +16,7 @@ use sequences::transition::{SequenceEventKind, TransitionModel};
 use serde_json::{Map, Value, json};
 use validation::baseline::run_validation_set;
 use std::cmp::min;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
@@ -80,6 +80,9 @@ struct Cli {
     #[arg(long, default_value_t = true)]
     alert_enable_burst_window: bool,
 
+    #[arg(long, default_value_t = true)]
+    alert_dedupe_by_tx: bool,
+
     #[arg(long, default_value_t = 1.0)]
     alert_min_volume_ln: f64,
 
@@ -100,6 +103,15 @@ struct Cli {
 
     #[arg(long, default_value_t = 20)]
     alert_cooldown_blocks: u64,
+
+    #[arg(long, default_value_t = 0)]
+    alert_report_interval_blocks: u64,
+
+    #[arg(long)]
+    alert_maintenance_start_block: Option<u64>,
+
+    #[arg(long)]
+    alert_maintenance_end_block: Option<u64>,
 
     #[arg(long, default_value_t = false)]
     enable_sequences: bool,
@@ -231,6 +243,7 @@ struct AlertConfig {
     enable_high_imbalance_high_volume: bool,
     enable_swap_gas_spike: bool,
     enable_burst_window: bool,
+    dedupe_by_tx: bool,
     min_volume_ln: f64,
     min_abs_imbalance: f64,
     min_gas_used: f64,
@@ -238,6 +251,9 @@ struct AlertConfig {
     burst_window_blocks: u64,
     burst_min_events: usize,
     cooldown_blocks: u64,
+    report_interval_blocks: u64,
+    maintenance_start_block: Option<u64>,
+    maintenance_end_block: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -279,6 +295,8 @@ struct ConsumerStats {
     alerts_rule_high_imbalance_high_volume: u64,
     alerts_rule_swap_gas_spike: u64,
     alerts_rule_burst_window: u64,
+    alerts_suppressed_maintenance: u64,
+    alerts_deduped_tx: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -346,6 +364,14 @@ async fn main() -> Result<()> {
     if cli.start_block > end_block {
         anyhow::bail!("start_block must be <= end_block");
     }
+    if let (Some(start), Some(end)) = (
+        cli.alert_maintenance_start_block,
+        cli.alert_maintenance_end_block,
+    ) {
+        if start > end {
+            anyhow::bail!("alert_maintenance_start_block must be <= alert_maintenance_end_block");
+        }
+    }
 
     let rpc_url = cli
         .rpc_url
@@ -412,6 +438,7 @@ async fn main() -> Result<()> {
         enable_high_imbalance_high_volume: cli.alert_enable_high_imbalance_high_volume,
         enable_swap_gas_spike: cli.alert_enable_swap_gas_spike,
         enable_burst_window: cli.alert_enable_burst_window,
+        dedupe_by_tx: cli.alert_dedupe_by_tx,
         min_volume_ln: cli.alert_min_volume_ln,
         min_abs_imbalance: cli.alert_min_abs_imbalance,
         min_gas_used: cli.alert_min_gas_used,
@@ -419,6 +446,9 @@ async fn main() -> Result<()> {
         burst_window_blocks: cli.alert_burst_window_blocks,
         burst_min_events: cli.alert_burst_min_events,
         cooldown_blocks: cli.alert_cooldown_blocks,
+        report_interval_blocks: cli.alert_report_interval_blocks,
+        maintenance_start_block: cli.alert_maintenance_start_block,
+        maintenance_end_block: cli.alert_maintenance_end_block,
     };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
     let periodic_snapshot_path = cli.memory_snapshot_out.clone();
@@ -797,6 +827,9 @@ async fn consume_pipeline(
     output: OutputConfig,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
+    let mut last_report_alerts_emitted = 0_u64;
+    let mut last_report_suppressed = 0_u64;
+    let mut last_report_deduped = 0_u64;
     let mut last_alert_block_by_rule_pool: HashMap<String, u64> = HashMap::new();
     let mut alert_history_by_pool: HashMap<String, VecDeque<u64>> = HashMap::new();
     let mut features_out_part = 0_u64;
@@ -834,6 +867,7 @@ async fn consume_pipeline(
                 if should_extract_features {
                     let started = Instant::now();
                     let (features, extraction_stats) = extract_features_with_stats(&receipt);
+                    let mut emitted_alert_keys_for_receipt: HashSet<String> = HashSet::new();
                     emit_event(
                         &output,
                         "features_extracted",
@@ -978,6 +1012,12 @@ async fn consume_pipeline(
                         }
 
                         if alert_config.enabled {
+                            if is_alert_suppressed_by_maintenance(block_number, &alert_config) {
+                                stats.alerts_suppressed_maintenance = stats
+                                    .alerts_suppressed_maintenance
+                                    .saturating_add(1);
+                                continue;
+                            }
                             let abs_imbalance = normalized.normalized_imbalance.abs();
                             let gas_used = normalized.feature.gas_used as f64;
                             let pool = normalized.feature.pool_address.clone();
@@ -998,6 +1038,15 @@ async fn consume_pipeline(
                                     alert_config.cooldown_blocks,
                                 );
                                 if should_emit {
+                                    let dedupe_key =
+                                        format!("{kind}:{}", normalized.feature.tx_hash);
+                                    if alert_config.dedupe_by_tx
+                                        && !emitted_alert_keys_for_receipt.insert(dedupe_key)
+                                    {
+                                        stats.alerts_deduped_tx =
+                                            stats.alerts_deduped_tx.saturating_add(1);
+                                        continue;
+                                    }
                                     let severity = classify_alert_severity(
                                         normalized.normalized_total_volume,
                                         abs_imbalance,
@@ -1079,6 +1128,15 @@ async fn consume_pipeline(
                                     alert_config.cooldown_blocks,
                                 );
                                 if should_emit {
+                                    let dedupe_key =
+                                        format!("{kind}:{}", normalized.feature.tx_hash);
+                                    if alert_config.dedupe_by_tx
+                                        && !emitted_alert_keys_for_receipt.insert(dedupe_key)
+                                    {
+                                        stats.alerts_deduped_tx =
+                                            stats.alerts_deduped_tx.saturating_add(1);
+                                        continue;
+                                    }
                                     let severity = classify_swap_gas_spike_severity(
                                         normalized.normalized_gas,
                                         alert_config.min_gas_ln_swap_spike,
@@ -1154,6 +1212,15 @@ async fn consume_pipeline(
                                         alert_config.cooldown_blocks,
                                     );
                                     if should_emit {
+                                        let dedupe_key =
+                                            format!("{kind}:{}", normalized.feature.tx_hash);
+                                        if alert_config.dedupe_by_tx
+                                            && !emitted_alert_keys_for_receipt.insert(dedupe_key)
+                                        {
+                                            stats.alerts_deduped_tx =
+                                                stats.alerts_deduped_tx.saturating_add(1);
+                                            continue;
+                                        }
                                         let severity = AlertSeverity::Critical;
                                         emit_event(
                                             &output,
@@ -1163,6 +1230,7 @@ async fn consume_pipeline(
                                                 ("block", json!(block_number)),
                                                 ("severity", json!(severity.as_str())),
                                                 ("pool", json!(pool.clone())),
+                                                ("tx", json!(normalized.feature.tx_hash)),
                                                 ("window_blocks", json!(alert_config.burst_window_blocks)),
                                                 ("events_in_window", json!(burst_count)),
                                             ],
@@ -1308,6 +1376,55 @@ async fn consume_pipeline(
                         );
                     }
                 }
+                if alert_config.report_interval_blocks > 0
+                    && block_number % alert_config.report_interval_blocks == 0
+                {
+                    let delta_alerts = stats
+                        .alerts_emitted
+                        .saturating_sub(last_report_alerts_emitted);
+                    let delta_suppressed = stats
+                        .alerts_suppressed_maintenance
+                        .saturating_sub(last_report_suppressed);
+                    let delta_deduped =
+                        stats.alerts_deduped_tx.saturating_sub(last_report_deduped);
+                    emit_event(
+                        &output,
+                        "alert_noise_report",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("alerts_total", json!(stats.alerts_emitted)),
+                            ("suppressed_total", json!(stats.alerts_suppressed_maintenance)),
+                            ("deduped_total", json!(stats.alerts_deduped_tx)),
+                            ("alerts_delta", json!(delta_alerts)),
+                            ("suppressed_delta", json!(delta_suppressed)),
+                            ("deduped_delta", json!(delta_deduped)),
+                            (
+                                "interval_blocks",
+                                json!(alert_config.report_interval_blocks),
+                            ),
+                        ],
+                    );
+                    emit_metric(
+                        &output,
+                        "alert_noise_report",
+                        vec![
+                            ("block", json!(block_number)),
+                            ("alerts_total", json!(stats.alerts_emitted)),
+                            ("suppressed_total", json!(stats.alerts_suppressed_maintenance)),
+                            ("deduped_total", json!(stats.alerts_deduped_tx)),
+                            ("alerts_delta", json!(delta_alerts)),
+                            ("suppressed_delta", json!(delta_suppressed)),
+                            ("deduped_delta", json!(delta_deduped)),
+                            (
+                                "interval_blocks",
+                                json!(alert_config.report_interval_blocks),
+                            ),
+                        ],
+                    );
+                    last_report_alerts_emitted = stats.alerts_emitted;
+                    last_report_suppressed = stats.alerts_suppressed_maintenance;
+                    last_report_deduped = stats.alerts_deduped_tx;
+                }
                 if let Some(writer) = features_out.as_mut() {
                     writer
                         .flush()
@@ -1410,6 +1527,11 @@ fn print_runtime_metrics(
             "alerts_rule_burst_window",
             json!(consumer.alerts_rule_burst_window),
         ),
+        (
+            "alerts_suppressed_maintenance",
+            json!(consumer.alerts_suppressed_maintenance),
+        ),
+        ("alerts_deduped_tx", json!(consumer.alerts_deduped_tx)),
         ("recognized_logs", json!(consumer.recognized_logs)),
         ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
         ("malformed_logs", json!(consumer.malformed_logs)),
@@ -1526,6 +1648,16 @@ async fn run_preflight(rpc: &RpcClient, cli: &Cli, output: &OutputConfig) -> Res
             ),
             ("alert_enable_swap_gas_spike", json!(cli.alert_enable_swap_gas_spike)),
             ("alert_enable_burst_window", json!(cli.alert_enable_burst_window)),
+            ("alert_dedupe_by_tx", json!(cli.alert_dedupe_by_tx)),
+            (
+                "alert_report_interval_blocks",
+                json!(cli.alert_report_interval_blocks),
+            ),
+            (
+                "alert_maintenance_start_block",
+                json!(cli.alert_maintenance_start_block),
+            ),
+            ("alert_maintenance_end_block", json!(cli.alert_maintenance_end_block)),
             ("fetch_logs", json!(cli.fetch_logs)),
             ("receipt_limit", json!(cli.receipt_limit)),
         ],
@@ -1653,6 +1785,15 @@ fn pool_alert_count_in_window(
     pool: &str,
 ) -> usize {
     alert_history_by_pool.get(pool).map_or(0, |h| h.len())
+}
+
+fn is_alert_suppressed_by_maintenance(block_number: u64, config: &AlertConfig) -> bool {
+    match (config.maintenance_start_block, config.maintenance_end_block) {
+        (Some(start), Some(end)) => block_number >= start && block_number <= end,
+        (Some(start), None) => block_number >= start,
+        (None, Some(end)) => block_number <= end,
+        (None, None) => false,
+    }
 }
 
 fn open_features_output_writer(

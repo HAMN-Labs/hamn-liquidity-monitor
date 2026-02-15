@@ -20,6 +20,7 @@
 - Decide startup mode:
   - replay (fixed `--start-block/--end-block`)
   - follow (`--follow`)
+  - maintenance-aware follow preset (`scripts/run_follow_maintenance_profile.sh`)
 - Decide observability mode:
   - `--log-format json --emit-metrics-json` for machine ingestion.
 

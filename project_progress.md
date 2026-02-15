@@ -93,9 +93,14 @@
 - [x] Реализовано burst/window правило (`burst_window`) с параметрами `--alert-burst-window-blocks`, `--alert-burst-min-events`.
 - [x] Добавлены per-rule toggles (`--alert-enable-high-imbalance-high-volume`, `--alert-enable-swap-gas-spike`, `--alert-enable-burst-window`).
 - [x] Добавлен счетчик `alerts_rule_burst_window` и обновлены alert playbooks.
+- [x] Стартован Phase 10: добавлены suppression window (`--alert-maintenance-start-block`, `--alert-maintenance-end-block`) и dedup по tx (`--alert-dedupe-by-tx`).
+- [x] Добавлены счетчики `alerts_suppressed_maintenance` и `alerts_deduped_tx` в `runtime_metrics`.
+- [x] Создан backlog Phase 10 (`docs/backlog_next_phase_10_alert_suppression_dedup.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
+- [x] Добавлен periodic alert-noise report (`--alert-report-interval-blocks`, событие `alert_noise_report`).
+- [x] Добавлен maintenance preset script (`scripts/run_follow_maintenance_profile.sh`) и обновлены deployment/build docs.
 
 ### In Progress
-- [ ] Следующая итерация после закрытия Phase 9.
+- [ ] Следующая итерация после закрытия Phase 10.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

@@ -64,6 +64,8 @@ cargo run -- [OPTIONS]
   Enables `swap_gas_spike` rule.
 - `--alert-enable-burst-window` (default: `true`)  
   Enables `burst_window` rule.
+- `--alert-dedupe-by-tx` (default: `true`)  
+  Suppresses duplicate alerts for the same `rule+tx` within one receipt.
 - `--alert-min-volume-ln <F64>` (default: `1.0`)  
   Minimum normalized volume threshold for alert rule.
 - `--alert-min-abs-imbalance <F64>` (default: `0.2`)  
@@ -78,6 +80,12 @@ cargo run -- [OPTIONS]
   Minimum alerts in window to emit `burst_window` alert.
 - `--alert-cooldown-blocks <U64>` (default: `20`)  
   Minimum block distance between alerts for the same rule and pool.
+- `--alert-report-interval-blocks <U64>` (default: `0`)  
+  Emit periodic alert-noise report every N blocks (`0` disables periodic report).
+- `--alert-maintenance-start-block <U64>`  
+  Optional maintenance suppression start block.
+- `--alert-maintenance-end-block <U64>`  
+  Optional maintenance suppression end block.
 
 Severity model:
 - `warning`: alert thresholds are met.

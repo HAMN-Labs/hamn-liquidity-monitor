@@ -154,6 +154,7 @@ Alerting:
 - `--alert-enable-high-imbalance-high-volume`
 - `--alert-enable-swap-gas-spike`
 - `--alert-enable-burst-window`
+- `--alert-dedupe-by-tx`
 - `--alert-min-volume-ln`
 - `--alert-min-abs-imbalance`
 - `--alert-min-gas-used`
@@ -161,6 +162,9 @@ Alerting:
 - `--alert-burst-window-blocks`
 - `--alert-burst-min-events`
 - `--alert-cooldown-blocks`
+- `--alert-report-interval-blocks`
+- `--alert-maintenance-start-block`
+- `--alert-maintenance-end-block`
 
 Validation baseline:
 - `--run-validation-set`
@@ -181,6 +185,7 @@ Important log lines:
 - `preflight_started ...` / `preflight_ok ...`
 - `features_output_enabled ...` / `features_output_rotated ...`
 - `alert ... severity=warning|critical`
+- `alert_noise_report ...`
 
 Formatting:
 - `--log-format text` prints key-value text lines.
@@ -199,7 +204,9 @@ Formatting:
 - `alerts_critical`,
 - `alerts_rule_high_imbalance_high_volume`.
 - `alerts_rule_swap_gas_spike`,
-- `alerts_rule_burst_window`.
+- `alerts_rule_burst_window`,
+- `alerts_suppressed_maintenance`,
+- `alerts_deduped_tx`.
 
 ## Troubleshooting
 No features extracted:

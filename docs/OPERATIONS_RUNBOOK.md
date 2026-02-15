@@ -46,6 +46,8 @@ cargo run -- \
   - `alerts_rule_high_imbalance_high_volume`
   - `alerts_rule_swap_gas_spike`
   - `alerts_rule_burst_window`
+  - `alerts_suppressed_maintenance`
+  - `alerts_deduped_tx`
 - `memory_metrics`:
   - `active_patterns`
   - `match_ratio`
@@ -60,6 +62,7 @@ cargo run -- \
 - alerting:
   - `alert kind=high_imbalance_high_volume|swap_gas_spike|burst_window severity=warning|critical ...`
   - `metric=alerts`
+  - `alert_noise_report` / `metric=alert_noise_report` (if enabled)
 
 ## Tuning Table
 - Goal: reduce RPC failures
@@ -132,6 +135,15 @@ cargo run -- \
   - `--alert-burst-min-events`
   - `--alert-burst-window-blocks`
 - If burst is expected (known event), keep configuration and annotate incident as expected volatility.
+
+### Planned Maintenance or Expected Volatility
+- Set suppression range:
+  - `--alert-maintenance-start-block`
+  - `--alert-maintenance-end-block`
+- Keep `--alert-dedupe-by-tx=true` to reduce duplicate alert spam.
+- After maintenance window ends, verify counters:
+  - `alerts_suppressed_maintenance` increased during window.
+  - `alerts_deduped_tx` remains within expected range.
 
 ## Shutdown
 1. Stop process gracefully.

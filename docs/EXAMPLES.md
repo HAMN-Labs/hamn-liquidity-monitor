@@ -318,6 +318,7 @@ cargo run -- \
   --alert-enable-high-imbalance-high-volume true \
   --alert-enable-swap-gas-spike true \
   --alert-enable-burst-window true \
+  --alert-dedupe-by-tx true \
   --alert-min-volume-ln 1.0 \
   --alert-min-abs-imbalance 0.2 \
   --alert-min-gas-used 20000 \
@@ -325,6 +326,9 @@ cargo run -- \
   --alert-burst-window-blocks 50 \
   --alert-burst-min-events 3 \
   --alert-cooldown-blocks 20 \
+  --alert-report-interval-blocks 100 \
+  --alert-maintenance-start-block 0 \
+  --alert-maintenance-end-block 0 \
   --log-format json \
   --emit-metrics-json
 ```
@@ -332,4 +336,5 @@ cargo run -- \
 Expected signals:
 - `alert kind=high_imbalance_high_volume|swap_gas_spike|burst_window ...` events
 - `{"type":"metric","metric":"alerts",...}` lines
-- `runtime_metrics ... alerts_emitted=...`
+- `alert_noise_report ...` every 100 blocks
+- `runtime_metrics ... alerts_emitted=... alerts_suppressed_maintenance=... alerts_deduped_tx=...`

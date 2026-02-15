@@ -63,6 +63,12 @@ Increase real detection quality on Arbitrum mainnet data and harden runtime beha
 - Add window-based burst detection rules.
 - Add per-rule configurability and rollout controls.
 
+## Phase 10: Alert Suppression and Dedup
+- Add maintenance suppression window for planned volatility periods.
+- Add per-transaction dedup to avoid duplicate alert spam from one tx.
+- Track suppression/dedup counters in runtime metrics.
+- Add operator presets for maintenance scenarios.
+
 ## Exit Criteria
 - Stable runtime in follow mode for at least 12 hours without manual restarts.
 - Non-zero feature extraction on selected DeFi-heavy ranges.
