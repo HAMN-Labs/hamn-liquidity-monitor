@@ -122,3 +122,8 @@ cargo run -- \
   --enable-sequences \
   --pipeline-queue-capacity 4
 ```
+
+## Documentation
+- User guide (English): `docs/USER_GUIDE.md`
+- Next iteration plan: `docs/NEXT_ITERATION_PLAN.md`
+- Internal execution workflow: `docs/workflow.md`
