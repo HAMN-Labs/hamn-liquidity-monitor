@@ -39,3 +39,19 @@ The MVP is considered successful upon meeting the following criteria:
 
 ---
 *This project is implemented in accordance with technical specification version 0.2.*
+
+## Local Run (Stage 1, Rust ingestion)
+
+```bash
+export HAMN_RPC_URL="https://arb-mainnet.g.alchemy.com/v2/<your_alchemy_key>"
+cargo run -- --start-block 1 --end-block 1
+```
+
+```bash
+# Logs + receipts sample
+cargo run -- \
+  --start-block 2 \
+  --end-block 3 \
+  --fetch-logs \
+  --receipt-limit 1
+```
