@@ -74,9 +74,13 @@
 - [x] Добавлен machine-readable metrics stream (`--emit-metrics-json`) для `runtime/memory/sequence/validation` метрик.
 - [x] Добавлен startup preflight с опциональным bypass (`--skip-preflight`).
 - [x] Обновлены англоязычные docs для observability/operations (`README.md`, `docs/CLI_REFERENCE.md`, `docs/USER_GUIDE.md`, `docs/EXAMPLES.md`, `docs/OPERATIONS_RUNBOOK.md`).
+- [x] Реализован Phase 6 packaging: release build profile в `Cargo.toml`.
+- [x] Добавлен systemd unit template (`deploy/systemd/hamn-liquidity-monitor.service`).
+- [x] Добавлены preset scripts для replay/follow (`scripts/run_replay_profile.sh`, `scripts/run_follow_profile.sh`).
+- [x] Добавлены документация сборки/релиза и deployment checklist (`docs/BUILD_AND_RELEASE.md`, `docs/DEPLOYMENT_CHECKLIST.md`).
 
 ### In Progress
-- [ ] Phase 6: packaging and deployment profiles.
+- [ ] Следующая итерация после Phase 6 (по новым целям продукта).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

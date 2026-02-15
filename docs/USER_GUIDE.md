@@ -12,6 +12,8 @@ Current implementation supports:
 Related docs:
 - CLI flags and presets: `docs/CLI_REFERENCE.md`
 - Operational procedures: `docs/OPERATIONS_RUNBOOK.md`
+- Build and release: `docs/BUILD_AND_RELEASE.md`
+- Deployment checklist: `docs/DEPLOYMENT_CHECKLIST.md`
 - Ready-to-run scenarios: `docs/EXAMPLES.md`
 - Frequently asked questions: `docs/FAQ.md`
 

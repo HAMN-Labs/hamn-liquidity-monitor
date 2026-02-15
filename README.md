@@ -168,6 +168,8 @@ cargo run -- \
 - User guide (English): `docs/USER_GUIDE.md`
 - CLI reference (English): `docs/CLI_REFERENCE.md`
 - Operations runbook (English): `docs/OPERATIONS_RUNBOOK.md`
+- Build and release (English): `docs/BUILD_AND_RELEASE.md`
+- Deployment checklist (English): `docs/DEPLOYMENT_CHECKLIST.md`
 - Example scenarios (English): `docs/EXAMPLES.md`
 - FAQ (English): `docs/FAQ.md`
 - Next iteration plan: `docs/NEXT_ITERATION_PLAN.md`

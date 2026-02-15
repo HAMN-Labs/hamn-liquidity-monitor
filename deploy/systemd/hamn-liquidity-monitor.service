@@ -1,0 +1,23 @@
+[Unit]
+Description=HAMN Liquidity Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hamn
+Group=hamn
+WorkingDirectory=/opt/hamn-liquidity-monitor
+EnvironmentFile=/etc/hamn-liquidity-monitor.env
+ExecStart=/opt/hamn-liquidity-monitor/target/release/hamn_liquidity_monitor --follow --start-block 359066951 --end-block 18446744073709551615 --fetch-logs --receipt-limit 20 --extract-features --enable-memory --enable-sequences --pipeline-queue-capacity 128 --log-format json --emit-metrics-json --memory-snapshot-out /var/lib/hamn/memory_snapshot.json --snapshot-interval-blocks 500
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hamn
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
