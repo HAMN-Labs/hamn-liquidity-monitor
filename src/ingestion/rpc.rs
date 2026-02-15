@@ -194,7 +194,20 @@ pub struct TransactionReceipt {
     pub gas_used: u64,
     #[serde(rename = "status", deserialize_with = "de_hex_u64")]
     pub status: u64,
-    pub logs: Vec<serde_json::Value>,
+    pub logs: Vec<ReceiptLog>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReceiptLog {
+    pub address: String,
+    pub topics: Vec<String>,
+    pub data: String,
+    #[serde(
+        rename = "logIndex",
+        default,
+        deserialize_with = "de_opt_hex_u64"
+    )]
+    pub log_index: Option<u64>,
 }
 
 pub fn extract_tx_hash(tx: &serde_json::Value) -> Option<&str> {
@@ -229,6 +242,21 @@ where
     let s = String::deserialize(deserializer)?;
     let s = s.trim_start_matches("0x");
     u64::from_str_radix(s, 16).map_err(serde::de::Error::custom)
+}
+
+fn de_opt_hex_u64<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    match value {
+        Some(s) => {
+            let stripped = s.trim_start_matches("0x");
+            let parsed = u64::from_str_radix(stripped, 16).map_err(serde::de::Error::custom)?;
+            Ok(Some(parsed))
+        }
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

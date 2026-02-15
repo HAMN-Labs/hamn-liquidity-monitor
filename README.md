@@ -57,6 +57,15 @@ cargo run -- \
 ```
 
 ```bash
+# Feature extraction from receipts
+cargo run -- \
+  --start-block 2 \
+  --end-block 10 \
+  --receipt-limit 5 \
+  --extract-features
+```
+
+```bash
 # Near-real-time polling (bounded by end block)
 cargo run -- \
   --start-block 2 \

@@ -17,9 +17,13 @@
 - [x] Добавлена retry/backoff/timeout policy для RPC-запросов.
 - [x] Добавлен polling-режим (`--follow`) для near-real-time обработки блоков.
 - [x] Проверены replay и polling-сценарии на Arbitrum через Alchemy endpoint.
+- [x] Реализован Stage 2 feature extraction модуль (`swap/add/remove liquidity`).
+- [x] Добавлен парсинг признаков из `receipt.logs` и нормализация числовых фичей.
+- [x] Добавлен runtime-флаг `--extract-features` для извлечения фичей из полученных receipt.
+- [x] Добавлены unit-тесты Stage 2 (в сумме 6 тестов по проекту, все проходят).
 
 ### In Progress
-- [ ] Stage 2: описать структуру фичей для swap / add-liquidity / remove-liquidity.
+- [ ] Stage 3: определить модель паттерна и метаданные confidence/recency.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

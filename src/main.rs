@@ -1,7 +1,9 @@
+mod features;
 mod ingestion;
 
 use anyhow::Result;
 use clap::Parser;
+use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
 use ingestion::rpc::{RpcClient, RpcPolicy, extract_tx_hash};
 use std::cmp::min;
 use std::time::Duration;
@@ -27,6 +29,9 @@ struct Cli {
 
     #[arg(long, default_value_t = 0)]
     receipt_limit: usize,
+
+    #[arg(long, default_value_t = false)]
+    extract_features: bool,
 
     #[arg(long, default_value_t = 10_000)]
     rpc_timeout_ms: u64,
@@ -149,6 +154,28 @@ async fn process_block(rpc: &RpcClient, cli: &Cli, block_number: u64) -> Result<
                     receipt.status,
                     receipt.logs.len(),
                 );
+
+                if cli.extract_features {
+                    let features = extract_features_from_receipt(&receipt);
+                    println!("features_extracted={}", features.len());
+                    for feature in features {
+                        let normalized = normalize_feature(feature);
+                        let event_label = match normalized.feature.event_kind {
+                            LiquidityEventKind::Swap => "swap",
+                            LiquidityEventKind::AddLiquidity => "add_liquidity",
+                            LiquidityEventKind::RemoveLiquidity => "remove_liquidity",
+                        };
+                        println!(
+                            "feature event={} tx={} pool={} volume_ln={:.6} imbalance={:.6} gas_ln={:.6}",
+                            event_label,
+                            normalized.feature.tx_hash,
+                            normalized.feature.pool_address,
+                            normalized.normalized_total_volume,
+                            normalized.normalized_imbalance,
+                            normalized.normalized_gas,
+                        );
+                    }
+                }
                 fetched += 1;
             }
         }
