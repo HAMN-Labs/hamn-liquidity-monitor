@@ -255,3 +255,52 @@ Expected signals:
 - JSON event records (`{"type":"event","event":"block",...}`)
 - JSON metric records (`{"type":"metric","metric":"runtime_metrics",...}`)
 - startup preflight records (`preflight_started`, `preflight_ok`)
+
+## 14. Feature Export Profile
+Purpose: persist extracted normalized features for offline labeling and analysis.
+
+```bash
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --start-block 359066951 \
+  --end-block 359066960 \
+  --receipt-limit 20 \
+  --extract-features \
+  --features-out data/features.ndjson
+```
+
+Expected signals:
+- `features_output_enabled ...`
+- `feature ...`
+- NDJSON records in `data/features.ndjson`
+
+## 15. Feature Export with Rotation
+Purpose: keep file sizes bounded during long replay/follow runs.
+
+```bash
+cargo run -- \
+  --rpc-url "$HAMN_RPC_URL" \
+  --start-block 359066951 \
+  --end-block 359067200 \
+  --receipt-limit 20 \
+  --extract-features \
+  --features-out data/features.ndjson \
+  --features-out-rotate-records 50000
+```
+
+Expected signals:
+- `features_output_enabled ... rotate_records=50000`
+- `features_output_rotated ...`
+- files like `data/features.part000000.ndjson`, `data/features.part000001.ndjson`
+
+## 16. Export Dataset Quick Stats
+Purpose: inspect class mix and top pools in exported NDJSON.
+
+```bash
+scripts/features_stats.sh data/features.ndjson
+```
+
+Expected signals:
+- `total_lines=...`
+- `event_swap=...`, `event_add_liquidity=...`, `event_remove_liquidity=...`
+- `top_pool count=... pool=...`

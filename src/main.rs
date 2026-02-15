@@ -17,6 +17,10 @@ use serde_json::{Map, Value, json};
 use validation::baseline::run_validation_set;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
@@ -51,6 +55,12 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     extract_features: bool,
+
+    #[arg(long)]
+    features_out: Option<String>,
+
+    #[arg(long, default_value_t = 0)]
+    features_out_rotate_records: u64,
 
     #[arg(long, default_value_t = 18)]
     token0_decimals: u8,
@@ -330,6 +340,8 @@ async fn main() -> Result<()> {
     let smoothing_alpha = cli.sequence_smoothing_alpha;
     let periodic_snapshot_path = cli.memory_snapshot_out.clone();
     let snapshot_interval_blocks = cli.snapshot_interval_blocks;
+    let features_out_path = cli.features_out.clone();
+    let features_out_rotate_records = cli.features_out_rotate_records;
     let consumer_handle = tokio::spawn(async move {
         consume_pipeline(
             rx,
@@ -340,6 +352,8 @@ async fn main() -> Result<()> {
             normalization,
             periodic_snapshot_path,
             snapshot_interval_blocks,
+            features_out_path,
+            features_out_rotate_records,
             output,
         )
         .await
@@ -693,9 +707,30 @@ async fn consume_pipeline(
     normalization: NormalizationProfile,
     periodic_snapshot_path: Option<String>,
     snapshot_interval_blocks: u64,
+    features_out_path: Option<String>,
+    features_out_rotate_records: u64,
     output: OutputConfig,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
+    let mut features_out_part = 0_u64;
+    let mut features_out_records_in_part = 0_u64;
+    let mut features_out_current_path: Option<String> = None;
+    let mut features_out = if let Some(path) = features_out_path.as_ref() {
+        let (writer, resolved_path) =
+            open_features_output_writer(path, features_out_rotate_records, features_out_part)?;
+        features_out_current_path = Some(resolved_path.clone());
+        emit_event(
+            &output,
+            "features_output_enabled",
+            vec![
+                ("path", json!(resolved_path)),
+                ("rotate_records", json!(features_out_rotate_records)),
+            ],
+        );
+        Some(writer)
+    } else {
+        None
+    };
 
     while let Some(message) = rx.recv().await {
         match message {
@@ -765,6 +800,53 @@ async fn consume_pipeline(
                                 ("gas_ln", json!(round_to(normalized.normalized_gas, 6))),
                             ],
                         );
+                        if let Some(writer) = features_out.as_mut() {
+                            let record = json!({
+                                "block": block_number,
+                                "event": event_label(&normalized.feature.event_kind),
+                                "tx": normalized.feature.tx_hash,
+                                "pool": normalized.feature.pool_address,
+                                "volume_ln": round_to(normalized.normalized_total_volume, 6),
+                                "imbalance": round_to(normalized.normalized_imbalance, 6),
+                                "gas_ln": round_to(normalized.normalized_gas, 6)
+                            });
+                            writeln!(writer, "{record}")
+                                .context("failed to write feature record")?;
+                            features_out_records_in_part =
+                                features_out_records_in_part.saturating_add(1);
+                            if features_out_rotate_records > 0
+                                && features_out_records_in_part >= features_out_rotate_records
+                            {
+                                writer
+                                    .flush()
+                                    .context("failed to flush features output file before rotate")?;
+                                features_out_part = features_out_part.saturating_add(1);
+                                features_out_records_in_part = 0;
+                                let (next_writer, next_path) = open_features_output_writer(
+                                    features_out_path
+                                        .as_ref()
+                                        .context("features output path missing during rotate")?,
+                                    features_out_rotate_records,
+                                    features_out_part,
+                                )?;
+                                emit_event(
+                                    &output,
+                                    "features_output_rotated",
+                                    vec![
+                                        (
+                                            "from",
+                                            json!(features_out_current_path
+                                                .clone()
+                                                .unwrap_or_else(|| "<none>".to_string())),
+                                        ),
+                                        ("to", json!(next_path.clone())),
+                                        ("part", json!(features_out_part)),
+                                    ],
+                                );
+                                features_out_current_path = Some(next_path);
+                                *writer = next_writer;
+                            }
+                        }
 
                         if let Some(memory) = memory.as_mut() {
                             match memory.observe(&normalized) {
@@ -921,8 +1003,19 @@ async fn consume_pipeline(
                         );
                     }
                 }
+                if let Some(writer) = features_out.as_mut() {
+                    writer
+                        .flush()
+                        .context("failed to flush features output file")?;
+                }
             }
         }
+    }
+
+    if let Some(writer) = features_out.as_mut() {
+        writer
+            .flush()
+            .context("failed to flush features output file on shutdown")?;
     }
 
     Ok(ConsumerOutput {
@@ -1160,6 +1253,49 @@ fn value_to_text(value: &Value) -> String {
 fn round_to(value: f64, digits: usize) -> f64 {
     let multiplier = 10_f64.powi(digits as i32);
     (value * multiplier).round() / multiplier
+}
+
+fn open_features_output_writer(
+    base_path: &str,
+    rotate_records: u64,
+    part: u64,
+) -> Result<(BufWriter<File>, String)> {
+    let path = resolve_features_output_path(base_path, rotate_records, part);
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("failed to open features output file: {path}"))?;
+    Ok((BufWriter::new(file), path))
+}
+
+fn resolve_features_output_path(base_path: &str, rotate_records: u64, part: u64) -> String {
+    if rotate_records == 0 {
+        return base_path.to_string();
+    }
+
+    let path = Path::new(base_path);
+    let parent = path.parent();
+    let stem = path
+        .file_stem()
+        .map(|v| v.to_string_lossy().to_string())
+        .unwrap_or_else(|| "features".to_string());
+    let extension = path
+        .extension()
+        .map(|v| v.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let filename = if extension.is_empty() {
+        format!("{stem}.part{part:06}")
+    } else {
+        format!("{stem}.part{part:06}.{extension}")
+    };
+
+    if let Some(parent) = parent {
+        parent.join(filename).to_string_lossy().to_string()
+    } else {
+        filename
+    }
 }
 
 async fn wait_for_shutdown_change(shutdown_rx: &watch::Receiver<bool>) {

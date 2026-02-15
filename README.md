@@ -170,6 +170,8 @@ cargo run -- \
 - Operations runbook (English): `docs/OPERATIONS_RUNBOOK.md`
 - Build and release (English): `docs/BUILD_AND_RELEASE.md`
 - Deployment checklist (English): `docs/DEPLOYMENT_CHECKLIST.md`
+- Feature export schema: `docs/FEATURE_EXPORT_SCHEMA.md`
+- Labeling workflow: `docs/LABELING_WORKFLOW.md`
 - Example scenarios (English): `docs/EXAMPLES.md`
 - FAQ (English): `docs/FAQ.md`
 - Next iteration plan: `docs/NEXT_ITERATION_PLAN.md`
@@ -180,5 +182,6 @@ cargo run -- \
   - `docs/backlog_next_phase_04_runtime_hardening.md`
   - `docs/backlog_next_phase_05_observability_ops.md`
   - `docs/backlog_next_phase_06_packaging.md`
+  - `docs/backlog_next_phase_07_data_export_labeling.md`
 - Phase 1 coverage report: `docs/PHASE1_COVERAGE_REPORT.md`
 - Internal execution workflow: `docs/workflow.md`

@@ -45,6 +45,12 @@ Increase real detection quality on Arbitrum mainnet data and harden runtime beha
   - replay mode,
   - near-real-time mode.
 
+## Phase 7: Data Export and Labeling
+- Add runtime export of normalized features to NDJSON.
+- Define export schema and labeling workflow.
+- Add dataset quality checks (coverage, class balance proxy, malformed ratio).
+- Prepare artifacts for iterative parser/model quality improvements.
+
 ## Exit Criteria
 - Stable runtime in follow mode for at least 12 hours without manual restarts.
 - Non-zero feature extraction on selected DeFi-heavy ranges.

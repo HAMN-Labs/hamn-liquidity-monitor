@@ -78,9 +78,13 @@
 - [x] Добавлен systemd unit template (`deploy/systemd/hamn-liquidity-monitor.service`).
 - [x] Добавлены preset scripts для replay/follow (`scripts/run_replay_profile.sh`, `scripts/run_follow_profile.sh`).
 - [x] Добавлены документация сборки/релиза и deployment checklist (`docs/BUILD_AND_RELEASE.md`, `docs/DEPLOYMENT_CHECKLIST.md`).
+- [x] Стартован Phase 7: добавлен экспорт фичей в NDJSON (`--features-out`).
+- [x] Создан backlog Phase 7 (`docs/backlog_next_phase_07_data_export_labeling.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
+- [x] Добавлена ротация feature-export по числу записей (`--features-out-rotate-records`) с событиями `features_output_rotated`.
+- [x] Добавлены Phase 7 артефакты данных: схема экспорта, labeling workflow, quick-stats script (`docs/FEATURE_EXPORT_SCHEMA.md`, `docs/LABELING_WORKFLOW.md`, `scripts/features_stats.sh`).
 
 ### In Progress
-- [ ] Следующая итерация после Phase 6 (по новым целям продукта).
+- [ ] Следующая итерация после закрытия Phase 7.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

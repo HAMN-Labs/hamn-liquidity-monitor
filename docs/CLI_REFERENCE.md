@@ -39,6 +39,11 @@ cargo run -- [OPTIONS]
 ## Feature Extraction
 - `--extract-features`  
   Enables feature extraction from receipt logs.
+- `--features-out <PATH>`  
+  Appends normalized feature records to NDJSON file for offline analysis.
+- `--features-out-rotate-records <U64>` (default: `0`)  
+  Rotates feature export file every N written records (`0` disables rotation).  
+  In rotation mode files are written as `*.part000000.ndjson`, `*.part000001.ndjson`, etc.
 - `--token0-decimals <U8>` (default: `18`)  
   Decimals used to scale token0 amounts during normalization.
 - `--token1-decimals <U8>` (default: `18`)  

@@ -14,6 +14,8 @@ Related docs:
 - Operational procedures: `docs/OPERATIONS_RUNBOOK.md`
 - Build and release: `docs/BUILD_AND_RELEASE.md`
 - Deployment checklist: `docs/DEPLOYMENT_CHECKLIST.md`
+- Feature export schema: `docs/FEATURE_EXPORT_SCHEMA.md`
+- Labeling workflow: `docs/LABELING_WORKFLOW.md`
 - Ready-to-run scenarios: `docs/EXAMPLES.md`
 - Frequently asked questions: `docs/FAQ.md`
 
@@ -126,6 +128,8 @@ Pipeline control:
 
 Feature extraction:
 - `--extract-features`
+- `--features-out`
+- `--features-out-rotate-records`
 - `--token0-decimals`
 - `--token1-decimals`
 
@@ -162,6 +166,7 @@ Important log lines:
 - `heartbeat ...`
 - `memory_snapshot_saved ...`
 - `preflight_started ...` / `preflight_ok ...`
+- `features_output_enabled ...` / `features_output_rotated ...`
 
 Formatting:
 - `--log-format text` prints key-value text lines.
