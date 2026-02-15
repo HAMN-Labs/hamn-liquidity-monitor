@@ -53,9 +53,14 @@
 - [x] Обновлена англоязычная документация по фильтрам (`README.md`, `docs/USER_GUIDE.md`, `docs/CLI_REFERENCE.md`, `docs/EXAMPLES.md`, `docs/FAQ.md`).
 - [x] Созданы backlog-файлы для следующей итерации (Phase 1-6) в `docs/backlog_next_phase_*.md`.
 - [x] Добавлены coverage-метрики в runtime summary (`logs_per_block`, `log_hit_ratio`, `features_per_block`, `feature_hit_ratio`).
+- [x] Выбраны и задокументированы 5 replay-диапазонов для Phase 1 coverage.
+- [x] Добавлены presets для coverage-replay в `docs/EXAMPLES.md`.
+- [x] Сформирован первый coverage report (`docs/PHASE1_COVERAGE_REPORT.md`).
+- [x] Добавлен `topic0` discovery summary (`topic0_top`) для приоритизации расширения парсера.
+- [x] Получен первый список top topic0 сигнатур на диапазоне `359066951..359066952`.
 
 ### In Progress
-- [ ] Phase 1: выбрать и документировать 3-5 DeFi-активных диапазонов для coverage replay.
+- [ ] Phase 2: расширить парсер событий для современных DeFi-логов (блоки `359066951+`).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

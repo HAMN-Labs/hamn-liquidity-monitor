@@ -63,6 +63,8 @@ cargo run -- [OPTIONS]
 ## Pipeline Runtime
 - `--pipeline-queue-capacity <USIZE>` (default: `128`)  
   Bounded queue size between ingestion producer and processing consumer.
+- `--topic0-top-n <USIZE>` (default: `10`)  
+  Prints top-N observed `topic0` signatures from fetched logs.
 
 ## Example Presets
 Replay with full pipeline:

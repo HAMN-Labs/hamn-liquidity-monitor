@@ -156,3 +156,42 @@ cargo run -- \
 
 Expected signals:
 - `logs_range=... total_logs=... topic0_filters=1`
+
+## 10. Phase 1 Coverage Presets
+Purpose: replay selected ranges for coverage comparison.
+
+Preset A:
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000010 \
+  --fetch-logs \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences
+```
+
+Preset B:
+```bash
+cargo run -- \
+  --start-block 359066951 \
+  --end-block 359066960 \
+  --fetch-logs \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences
+```
+
+Preset C:
+```bash
+cargo run -- \
+  --start-block 359070000 \
+  --end-block 359070010 \
+  --fetch-logs \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences
+```

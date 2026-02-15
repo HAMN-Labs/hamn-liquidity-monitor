@@ -114,6 +114,7 @@ RPC reliability:
 
 Pipeline control:
 - `--pipeline-queue-capacity`
+- `--topic0-top-n`
 
 Feature extraction:
 - `--extract-features`
@@ -140,6 +141,7 @@ Important log lines:
 - `memory_metrics ...`
 - `sequence_metrics ...`
 - `runtime_metrics ...`
+- `topic0_top rank=... count=... topic=...`
 
 `runtime_metrics` includes:
 - throughput (`throughput_rps`),

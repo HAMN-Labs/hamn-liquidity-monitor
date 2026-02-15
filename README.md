@@ -62,6 +62,7 @@ cargo run -- \
   --start-block 1000000 \
   --end-block 1000100 \
   --fetch-logs \
+  --topic0-top-n 10 \
   --log-topic0 0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
 ```
 
@@ -146,4 +147,5 @@ cargo run -- \
   - `docs/backlog_next_phase_04_runtime_hardening.md`
   - `docs/backlog_next_phase_05_observability_ops.md`
   - `docs/backlog_next_phase_06_packaging.md`
+- Phase 1 coverage report: `docs/PHASE1_COVERAGE_REPORT.md`
 - Internal execution workflow: `docs/workflow.md`

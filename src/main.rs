@@ -10,6 +10,7 @@ use ingestion::rpc::{LogFilter, RpcClient, RpcPolicy, TransactionReceipt, extrac
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
 use sequences::transition::{SequenceEventKind, TransitionModel};
 use std::cmp::min;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -100,6 +101,9 @@ struct Cli {
 
     #[arg(long, default_value_t = 2_000)]
     poll_interval_ms: u64,
+
+    #[arg(long, default_value_t = 10)]
+    topic0_top_n: usize,
 }
 
 #[derive(Debug)]
@@ -121,6 +125,7 @@ struct ProducerStats {
     receipts_enqueued: u64,
     logs_fetched_total: u64,
     blocks_with_logs: u64,
+    topic0_counts: HashMap<String, u64>,
     rpc_errors: u64,
     block_fetch_ms_total: u128,
     receipt_fetch_ms_total: u128,
@@ -267,6 +272,7 @@ async fn main() -> Result<()> {
     }
 
     print_runtime_metrics(runtime_started.elapsed(), &producer_stats, &consumer_output.stats);
+    print_topic0_summary(&producer_stats, cli.topic0_top_n);
 
     Ok(())
 }
@@ -333,6 +339,13 @@ async fn ingest_block_to_pipeline(
                     .saturating_add(logs.len() as u64);
                 if !logs.is_empty() {
                     stats.blocks_with_logs = stats.blocks_with_logs.saturating_add(1);
+                }
+                for log in &logs {
+                    if let Some(topic0) = log.topics.first() {
+                        let key = topic0.to_lowercase();
+                        let count = stats.topic0_counts.entry(key).or_insert(0);
+                        *count = count.saturating_add(1);
+                    }
                 }
                 println!(
                     "logs_range={}..={} total_logs={} topic0_filters={} address_filters={}",
@@ -635,5 +648,23 @@ fn event_label(kind: &LiquidityEventKind) -> &'static str {
         LiquidityEventKind::Swap => "swap",
         LiquidityEventKind::AddLiquidity => "add_liquidity",
         LiquidityEventKind::RemoveLiquidity => "remove_liquidity",
+    }
+}
+
+fn print_topic0_summary(producer: &ProducerStats, top_n: usize) {
+    if producer.topic0_counts.is_empty() || top_n == 0 {
+        return;
+    }
+
+    let mut rows: Vec<(&String, &u64)> = producer.topic0_counts.iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(a.1));
+
+    for (rank, (topic, count)) in rows.into_iter().take(top_n).enumerate() {
+        println!(
+            "topic0_top rank={} count={} topic={}",
+            rank + 1,
+            count,
+            topic
+        );
     }
 }
