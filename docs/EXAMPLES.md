@@ -319,6 +319,8 @@ cargo run -- \
   --alert-enable-swap-gas-spike true \
   --alert-enable-burst-window true \
   --alert-dedupe-by-tx true \
+  --alerts-out data/alerts.ndjson \
+  --alert-ack-tx-in data/alert_ack_tx.txt \
   --alert-min-volume-ln 1.0 \
   --alert-min-abs-imbalance 0.2 \
   --alert-min-gas-used 20000 \
@@ -337,4 +339,4 @@ Expected signals:
 - `alert kind=high_imbalance_high_volume|swap_gas_spike|burst_window ...` events
 - `{"type":"metric","metric":"alerts",...}` lines
 - `alert_noise_report ...` every 100 blocks
-- `runtime_metrics ... alerts_emitted=... alerts_suppressed_maintenance=... alerts_deduped_tx=...`
+- `runtime_metrics ... alerts_emitted=... alerts_suppressed_maintenance=... alerts_deduped_tx=... alerts_suppressed_ack=...`

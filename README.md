@@ -1,5 +1,5 @@
 # HAMN: Hierarchical Adaptive Memory Network for Liquidity Analysis
-
+https://github.com/user-attachments/assets/6ad27858-9f65-4e36-ac22-1d34caf4cb08
 **HAMN** is an intelligent system designed to analyze and forecast liquidity flows within blockchain ecosystems such as Ethereum and Arbitrum. The system operates in a streaming mode and autonomously adapts to market shifts without the need for manual rule updates.
 
 ## Key Features

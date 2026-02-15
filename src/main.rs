@@ -19,6 +19,7 @@ use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::fs::read_to_string;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -82,6 +83,12 @@ struct Cli {
 
     #[arg(long, default_value_t = true)]
     alert_dedupe_by_tx: bool,
+
+    #[arg(long)]
+    alerts_out: Option<String>,
+
+    #[arg(long)]
+    alert_ack_tx_in: Option<String>,
 
     #[arg(long, default_value_t = 1.0)]
     alert_min_volume_ln: f64,
@@ -297,6 +304,7 @@ struct ConsumerStats {
     alerts_rule_burst_window: u64,
     alerts_suppressed_maintenance: u64,
     alerts_deduped_tx: u64,
+    alerts_suppressed_ack: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -455,6 +463,8 @@ async fn main() -> Result<()> {
     let snapshot_interval_blocks = cli.snapshot_interval_blocks;
     let features_out_path = cli.features_out.clone();
     let features_out_rotate_records = cli.features_out_rotate_records;
+    let alerts_out_path = cli.alerts_out.clone();
+    let alert_ack_tx_in_path = cli.alert_ack_tx_in.clone();
     let consumer_handle = tokio::spawn(async move {
         consume_pipeline(
             rx,
@@ -467,6 +477,8 @@ async fn main() -> Result<()> {
             snapshot_interval_blocks,
             features_out_path,
             features_out_rotate_records,
+            alerts_out_path,
+            alert_ack_tx_in_path,
             alert_config,
             output,
         )
@@ -823,6 +835,8 @@ async fn consume_pipeline(
     snapshot_interval_blocks: u64,
     features_out_path: Option<String>,
     features_out_rotate_records: u64,
+    alerts_out_path: Option<String>,
+    alert_ack_tx_in_path: Option<String>,
     alert_config: AlertConfig,
     output: OutputConfig,
 ) -> Result<ConsumerOutput> {
@@ -830,8 +844,17 @@ async fn consume_pipeline(
     let mut last_report_alerts_emitted = 0_u64;
     let mut last_report_suppressed = 0_u64;
     let mut last_report_deduped = 0_u64;
+    let mut last_report_suppressed_ack = 0_u64;
     let mut last_alert_block_by_rule_pool: HashMap<String, u64> = HashMap::new();
     let mut alert_history_by_pool: HashMap<String, VecDeque<u64>> = HashMap::new();
+    let acked_tx = load_ack_tx_set(alert_ack_tx_in_path.as_deref())?;
+    if let Some(path) = alert_ack_tx_in_path.as_ref() {
+        emit_event(
+            &output,
+            "alert_ack_loaded",
+            vec![("path", json!(path)), ("tx_count", json!(acked_tx.len()))],
+        );
+    }
     let mut features_out_part = 0_u64;
     let mut features_out_records_in_part = 0_u64;
     let mut features_out_current_path: Option<String> = None;
@@ -848,6 +871,21 @@ async fn consume_pipeline(
             ],
         );
         Some(writer)
+    } else {
+        None
+    };
+    let mut alerts_out = if let Some(path) = alerts_out_path.as_ref() {
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .with_context(|| format!("failed to open alerts output file: {path}"))?;
+        emit_event(
+            &output,
+            "alerts_output_enabled",
+            vec![("path", json!(path))],
+        );
+        Some(BufWriter::new(file))
     } else {
         None
     };
@@ -1012,6 +1050,7 @@ async fn consume_pipeline(
                         }
 
                         if alert_config.enabled {
+                            let tx_hash_lc = normalized.feature.tx_hash.to_lowercase();
                             if is_alert_suppressed_by_maintenance(block_number, &alert_config) {
                                 stats.alerts_suppressed_maintenance = stats
                                     .alerts_suppressed_maintenance
@@ -1038,6 +1077,11 @@ async fn consume_pipeline(
                                     alert_config.cooldown_blocks,
                                 );
                                 if should_emit {
+                                    if acked_tx.contains(tx_hash_lc.as_str()) {
+                                        stats.alerts_suppressed_ack =
+                                            stats.alerts_suppressed_ack.saturating_add(1);
+                                        continue;
+                                    }
                                     let dedupe_key =
                                         format!("{kind}:{}", normalized.feature.tx_hash);
                                     if alert_config.dedupe_by_tx
@@ -1110,6 +1154,14 @@ async fn consume_pipeline(
                                         &pool,
                                         block_number,
                                     );
+                                    write_alert_record(
+                                        alerts_out.as_mut(),
+                                        kind,
+                                        severity.as_str(),
+                                        block_number,
+                                        normalized.feature.tx_hash.as_str(),
+                                        pool.as_str(),
+                                    )?;
                                     base_alert_emitted = true;
                                 }
                             }
@@ -1128,6 +1180,11 @@ async fn consume_pipeline(
                                     alert_config.cooldown_blocks,
                                 );
                                 if should_emit {
+                                    if acked_tx.contains(tx_hash_lc.as_str()) {
+                                        stats.alerts_suppressed_ack =
+                                            stats.alerts_suppressed_ack.saturating_add(1);
+                                        continue;
+                                    }
                                     let dedupe_key =
                                         format!("{kind}:{}", normalized.feature.tx_hash);
                                     if alert_config.dedupe_by_tx
@@ -1187,6 +1244,14 @@ async fn consume_pipeline(
                                         &pool,
                                         block_number,
                                     );
+                                    write_alert_record(
+                                        alerts_out.as_mut(),
+                                        kind,
+                                        severity.as_str(),
+                                        block_number,
+                                        normalized.feature.tx_hash.as_str(),
+                                        pool.as_str(),
+                                    )?;
                                     base_alert_emitted = true;
                                 }
                             }
@@ -1212,6 +1277,11 @@ async fn consume_pipeline(
                                         alert_config.cooldown_blocks,
                                     );
                                     if should_emit {
+                                        if acked_tx.contains(tx_hash_lc.as_str()) {
+                                            stats.alerts_suppressed_ack =
+                                                stats.alerts_suppressed_ack.saturating_add(1);
+                                            continue;
+                                        }
                                         let dedupe_key =
                                             format!("{kind}:{}", normalized.feature.tx_hash);
                                         if alert_config.dedupe_by_tx
@@ -1258,6 +1328,14 @@ async fn consume_pipeline(
                                             &pool,
                                             block_number,
                                         );
+                                        write_alert_record(
+                                            alerts_out.as_mut(),
+                                            kind,
+                                            severity.as_str(),
+                                            block_number,
+                                            normalized.feature.tx_hash.as_str(),
+                                            pool.as_str(),
+                                        )?;
                                     }
                                 }
                             }
@@ -1387,6 +1465,9 @@ async fn consume_pipeline(
                         .saturating_sub(last_report_suppressed);
                     let delta_deduped =
                         stats.alerts_deduped_tx.saturating_sub(last_report_deduped);
+                    let delta_suppressed_ack = stats
+                        .alerts_suppressed_ack
+                        .saturating_sub(last_report_suppressed_ack);
                     emit_event(
                         &output,
                         "alert_noise_report",
@@ -1394,9 +1475,11 @@ async fn consume_pipeline(
                             ("block", json!(block_number)),
                             ("alerts_total", json!(stats.alerts_emitted)),
                             ("suppressed_total", json!(stats.alerts_suppressed_maintenance)),
+                            ("suppressed_ack_total", json!(stats.alerts_suppressed_ack)),
                             ("deduped_total", json!(stats.alerts_deduped_tx)),
                             ("alerts_delta", json!(delta_alerts)),
                             ("suppressed_delta", json!(delta_suppressed)),
+                            ("suppressed_ack_delta", json!(delta_suppressed_ack)),
                             ("deduped_delta", json!(delta_deduped)),
                             (
                                 "interval_blocks",
@@ -1411,9 +1494,11 @@ async fn consume_pipeline(
                             ("block", json!(block_number)),
                             ("alerts_total", json!(stats.alerts_emitted)),
                             ("suppressed_total", json!(stats.alerts_suppressed_maintenance)),
+                            ("suppressed_ack_total", json!(stats.alerts_suppressed_ack)),
                             ("deduped_total", json!(stats.alerts_deduped_tx)),
                             ("alerts_delta", json!(delta_alerts)),
                             ("suppressed_delta", json!(delta_suppressed)),
+                            ("suppressed_ack_delta", json!(delta_suppressed_ack)),
                             ("deduped_delta", json!(delta_deduped)),
                             (
                                 "interval_blocks",
@@ -1424,11 +1509,17 @@ async fn consume_pipeline(
                     last_report_alerts_emitted = stats.alerts_emitted;
                     last_report_suppressed = stats.alerts_suppressed_maintenance;
                     last_report_deduped = stats.alerts_deduped_tx;
+                    last_report_suppressed_ack = stats.alerts_suppressed_ack;
                 }
                 if let Some(writer) = features_out.as_mut() {
                     writer
                         .flush()
                         .context("failed to flush features output file")?;
+                }
+                if let Some(writer) = alerts_out.as_mut() {
+                    writer
+                        .flush()
+                        .context("failed to flush alerts output file")?;
                 }
             }
         }
@@ -1438,6 +1529,11 @@ async fn consume_pipeline(
         writer
             .flush()
             .context("failed to flush features output file on shutdown")?;
+    }
+    if let Some(writer) = alerts_out.as_mut() {
+        writer
+            .flush()
+            .context("failed to flush alerts output file on shutdown")?;
     }
 
     Ok(ConsumerOutput {
@@ -1532,6 +1628,7 @@ fn print_runtime_metrics(
             json!(consumer.alerts_suppressed_maintenance),
         ),
         ("alerts_deduped_tx", json!(consumer.alerts_deduped_tx)),
+        ("alerts_suppressed_ack", json!(consumer.alerts_suppressed_ack)),
         ("recognized_logs", json!(consumer.recognized_logs)),
         ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
         ("malformed_logs", json!(consumer.malformed_logs)),
@@ -1649,6 +1746,8 @@ async fn run_preflight(rpc: &RpcClient, cli: &Cli, output: &OutputConfig) -> Res
             ("alert_enable_swap_gas_spike", json!(cli.alert_enable_swap_gas_spike)),
             ("alert_enable_burst_window", json!(cli.alert_enable_burst_window)),
             ("alert_dedupe_by_tx", json!(cli.alert_dedupe_by_tx)),
+            ("alerts_out", json!(cli.alerts_out)),
+            ("alert_ack_tx_in", json!(cli.alert_ack_tx_in)),
             (
                 "alert_report_interval_blocks",
                 json!(cli.alert_report_interval_blocks),
@@ -1794,6 +1893,44 @@ fn is_alert_suppressed_by_maintenance(block_number: u64, config: &AlertConfig) -
         (None, Some(end)) => block_number <= end,
         (None, None) => false,
     }
+}
+
+fn load_ack_tx_set(path: Option<&str>) -> Result<HashSet<String>> {
+    let Some(path) = path else {
+        return Ok(HashSet::new());
+    };
+
+    let raw = read_to_string(path).with_context(|| format!("failed to read ack tx file: {path}"))?;
+    let mut set = HashSet::new();
+    for line in raw.lines() {
+        let tx = line.trim().to_lowercase();
+        if tx.is_empty() || tx.starts_with('#') {
+            continue;
+        }
+        set.insert(tx);
+    }
+    Ok(set)
+}
+
+fn write_alert_record(
+    alerts_out: Option<&mut BufWriter<File>>,
+    kind: &str,
+    severity: &str,
+    block: u64,
+    tx: &str,
+    pool: &str,
+) -> Result<()> {
+    if let Some(writer) = alerts_out {
+        let record = json!({
+            "kind": kind,
+            "severity": severity,
+            "block": block,
+            "tx": tx,
+            "pool": pool
+        });
+        writeln!(writer, "{record}").context("failed to write alert record")?;
+    }
+    Ok(())
 }
 
 fn open_features_output_writer(

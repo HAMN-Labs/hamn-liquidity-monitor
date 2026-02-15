@@ -66,6 +66,10 @@ cargo run -- [OPTIONS]
   Enables `burst_window` rule.
 - `--alert-dedupe-by-tx` (default: `true`)  
   Suppresses duplicate alerts for the same `rule+tx` within one receipt.
+- `--alerts-out <PATH>`  
+  Appends emitted alert records to NDJSON file.
+- `--alert-ack-tx-in <PATH>`  
+  Path to newline-delimited acknowledged tx hashes; matched tx alerts are suppressed.
 - `--alert-min-volume-ln <F64>` (default: `1.0`)  
   Minimum normalized volume threshold for alert rule.
 - `--alert-min-abs-imbalance <F64>` (default: `0.2`)  

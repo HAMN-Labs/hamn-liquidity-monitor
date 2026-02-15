@@ -48,6 +48,7 @@ cargo run -- \
   - `alerts_rule_burst_window`
   - `alerts_suppressed_maintenance`
   - `alerts_deduped_tx`
+  - `alerts_suppressed_ack`
 - `memory_metrics`:
   - `active_patterns`
   - `match_ratio`
@@ -144,6 +145,13 @@ cargo run -- \
 - After maintenance window ends, verify counters:
   - `alerts_suppressed_maintenance` increased during window.
   - `alerts_deduped_tx` remains within expected range.
+
+### Alert Acknowledgement Workflow
+- Persist alerts with `--alerts-out <PATH>`.
+- Maintain acknowledged tx hashes in `--alert-ack-tx-in <PATH>` (one tx hash per line, `#` for comments).
+- Confirm runtime shows:
+  - `alert_ack_loaded ... tx_count=...`
+  - growth in `alerts_suppressed_ack` after acknowledgements are added.
 
 ## Shutdown
 1. Stop process gracefully.

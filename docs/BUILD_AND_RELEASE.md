@@ -47,3 +47,5 @@ Optional env overrides:
 - `POLL_INTERVAL_MS` (follow script)
 - `RECEIPT_LIMIT`
 - `QUEUE_CAPACITY`
+- `ALERTS_OUT` (maintenance follow script)
+- `ALERT_ACK_TX_IN` (maintenance follow script)

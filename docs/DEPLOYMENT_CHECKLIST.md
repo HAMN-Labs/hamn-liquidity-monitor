@@ -23,6 +23,9 @@
   - maintenance-aware follow preset (`scripts/run_follow_maintenance_profile.sh`)
 - Decide observability mode:
   - `--log-format json --emit-metrics-json` for machine ingestion.
+- Decide alert persistence/ack mode (optional):
+  - `--alerts-out <PATH>`
+  - `--alert-ack-tx-in <PATH>`
 
 ## 4. Service Installation (systemd)
 - Copy unit file:

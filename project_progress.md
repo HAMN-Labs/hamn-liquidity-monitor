@@ -98,6 +98,8 @@
 - [x] Создан backlog Phase 10 (`docs/backlog_next_phase_10_alert_suppression_dedup.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
 - [x] Добавлен periodic alert-noise report (`--alert-report-interval-blocks`, событие `alert_noise_report`).
 - [x] Добавлен maintenance preset script (`scripts/run_follow_maintenance_profile.sh`) и обновлены deployment/build docs.
+- [x] Добавлен alert persistence (`--alerts-out`) и ack suppression (`--alert-ack-tx-in`).
+- [x] Добавлен счетчик `alerts_suppressed_ack` и загрузка ack-списка (`alert_ack_loaded`).
 
 ### In Progress
 - [ ] Следующая итерация после закрытия Phase 10.

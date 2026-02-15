@@ -23,3 +23,8 @@ Reduce alert noise in production by adding suppression windows and dedup behavio
   - `--alert-report-interval-blocks`
 - Added maintenance preset script:
   - `scripts/run_follow_maintenance_profile.sh`
+- Added alert persistence and acknowledgement:
+  - `--alerts-out`
+  - `--alert-ack-tx-in`
+- Added runtime counter:
+  - `alerts_suppressed_ack`

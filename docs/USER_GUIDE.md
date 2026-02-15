@@ -155,6 +155,8 @@ Alerting:
 - `--alert-enable-swap-gas-spike`
 - `--alert-enable-burst-window`
 - `--alert-dedupe-by-tx`
+- `--alerts-out`
+- `--alert-ack-tx-in`
 - `--alert-min-volume-ln`
 - `--alert-min-abs-imbalance`
 - `--alert-min-gas-used`
@@ -207,6 +209,7 @@ Formatting:
 - `alerts_rule_burst_window`,
 - `alerts_suppressed_maintenance`,
 - `alerts_deduped_tx`.
+- `alerts_suppressed_ack`.
 
 ## Troubleshooting
 No features extracted:
