@@ -119,6 +119,8 @@ enum PipelineMessage {
 struct ProducerStats {
     blocks_processed: u64,
     receipts_enqueued: u64,
+    logs_fetched_total: u64,
+    blocks_with_logs: u64,
     rpc_errors: u64,
     block_fetch_ms_total: u128,
     receipt_fetch_ms_total: u128,
@@ -326,6 +328,12 @@ async fn ingest_block_to_pipeline(
 
         match logs_result {
             Ok(logs) => {
+                stats.logs_fetched_total = stats
+                    .logs_fetched_total
+                    .saturating_add(logs.len() as u64);
+                if !logs.is_empty() {
+                    stats.blocks_with_logs = stats.blocks_with_logs.saturating_add(1);
+                }
                 println!(
                     "logs_range={}..={} total_logs={} topic0_filters={} address_filters={}",
                     block_number,
@@ -578,9 +586,29 @@ fn print_runtime_metrics(elapsed: Duration, producer: &ProducerStats, consumer: 
     };
 
     let throughput_rps = consumer.receipts_processed as f64 / elapsed_secs;
+    let logs_per_block = if producer.blocks_processed == 0 {
+        0.0
+    } else {
+        producer.logs_fetched_total as f64 / producer.blocks_processed as f64
+    };
+    let log_hit_ratio = if producer.blocks_processed == 0 {
+        0.0
+    } else {
+        producer.blocks_with_logs as f64 / producer.blocks_processed as f64
+    };
+    let features_per_block = if producer.blocks_processed == 0 {
+        0.0
+    } else {
+        consumer.features_processed as f64 / producer.blocks_processed as f64
+    };
+    let feature_hit_ratio = if producer.receipts_enqueued == 0 {
+        0.0
+    } else {
+        consumer.features_processed as f64 / producer.receipts_enqueued as f64
+    };
 
     println!(
-        "runtime_metrics elapsed_s={:.3} blocks={} receipts_in={} receipts_processed={} features={} throughput_rps={:.3} avg_block_fetch_ms={:.3} avg_receipt_fetch_ms={:.3} avg_queue_backpressure_ms={:.3} avg_queue_latency_ms={:.3} avg_processing_ms={:.3} rpc_errors={} max_block_lag={}",
+        "runtime_metrics elapsed_s={:.3} blocks={} receipts_in={} receipts_processed={} features={} throughput_rps={:.3} avg_block_fetch_ms={:.3} avg_receipt_fetch_ms={:.3} avg_queue_backpressure_ms={:.3} avg_queue_latency_ms={:.3} avg_processing_ms={:.3} logs_total={} logs_per_block={:.3} log_hit_ratio={:.3} features_per_block={:.3} feature_hit_ratio={:.3} rpc_errors={} max_block_lag={}",
         elapsed_secs,
         producer.blocks_processed,
         producer.receipts_enqueued,
@@ -592,6 +620,11 @@ fn print_runtime_metrics(elapsed: Duration, producer: &ProducerStats, consumer: 
         avg_queue_backpressure_ms,
         avg_queue_latency_ms,
         avg_processing_ms,
+        producer.logs_fetched_total,
+        logs_per_block,
+        log_hit_ratio,
+        features_per_block,
+        feature_hit_ratio,
         producer.rpc_errors,
         consumer.max_block_lag,
     );

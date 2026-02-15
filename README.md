@@ -139,4 +139,11 @@ cargo run -- \
 - Example scenarios (English): `docs/EXAMPLES.md`
 - FAQ (English): `docs/FAQ.md`
 - Next iteration plan: `docs/NEXT_ITERATION_PLAN.md`
+- Next iteration backlogs:
+  - `docs/backlog_next_phase_01_real_defi_coverage.md`
+  - `docs/backlog_next_phase_02_feature_quality.md`
+  - `docs/backlog_next_phase_03_detection_baseline.md`
+  - `docs/backlog_next_phase_04_runtime_hardening.md`
+  - `docs/backlog_next_phase_05_observability_ops.md`
+  - `docs/backlog_next_phase_06_packaging.md`
 - Internal execution workflow: `docs/workflow.md`

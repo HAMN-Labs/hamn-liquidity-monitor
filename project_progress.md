@@ -51,9 +51,11 @@
 - [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на FAQ.
 - [x] Стартована следующая фаза: добавлены конфигурируемые log-фильтры (`--log-topic0`, `--log-address`) для `eth_getLogs`.
 - [x] Обновлена англоязычная документация по фильтрам (`README.md`, `docs/USER_GUIDE.md`, `docs/CLI_REFERENCE.md`, `docs/EXAMPLES.md`, `docs/FAQ.md`).
+- [x] Созданы backlog-файлы для следующей итерации (Phase 1-6) в `docs/backlog_next_phase_*.md`.
+- [x] Добавлены coverage-метрики в runtime summary (`logs_per_block`, `log_hit_ratio`, `features_per_block`, `feature_hit_ratio`).
 
 ### In Progress
-- [ ] Подготовить следующий итерационный шаг: улучшение качества детекции на блоках с реальными DeFi-логами.
+- [ ] Phase 1: выбрать и документировать 3-5 DeFi-активных диапазонов для coverage replay.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.
