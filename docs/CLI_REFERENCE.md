@@ -58,6 +58,12 @@ cargo run -- [OPTIONS]
 ## Alerting
 - `--enable-alerts`  
   Enables rule-based online alert emission from normalized features.
+- `--alert-enable-high-imbalance-high-volume` (default: `true`)  
+  Enables `high_imbalance_high_volume` rule.
+- `--alert-enable-swap-gas-spike` (default: `true`)  
+  Enables `swap_gas_spike` rule.
+- `--alert-enable-burst-window` (default: `true`)  
+  Enables `burst_window` rule.
 - `--alert-min-volume-ln <F64>` (default: `1.0`)  
   Minimum normalized volume threshold for alert rule.
 - `--alert-min-abs-imbalance <F64>` (default: `0.2`)  
@@ -66,8 +72,12 @@ cargo run -- [OPTIONS]
   Minimum transaction gas used threshold for alert rule.
 - `--alert-min-gas-ln-swap-spike <F64>` (default: `10.8`)  
   Minimum normalized gas threshold for swap gas spike alerts.
+- `--alert-burst-window-blocks <U64>` (default: `50`)  
+  Alert burst window size in blocks.
+- `--alert-burst-min-events <USIZE>` (default: `3`)  
+  Minimum alerts in window to emit `burst_window` alert.
 - `--alert-cooldown-blocks <U64>` (default: `20`)  
-  Minimum block distance between alerts for the same pool.
+  Minimum block distance between alerts for the same rule and pool.
 
 Severity model:
 - `warning`: alert thresholds are met.
@@ -76,6 +86,7 @@ Severity model:
 Alert rules:
 - `high_imbalance_high_volume`
 - `swap_gas_spike`
+- `burst_window`
 
 ## Adaptive Memory
 - `--enable-memory`  

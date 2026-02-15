@@ -151,10 +151,15 @@ Sequence model:
 
 Alerting:
 - `--enable-alerts`
+- `--alert-enable-high-imbalance-high-volume`
+- `--alert-enable-swap-gas-spike`
+- `--alert-enable-burst-window`
 - `--alert-min-volume-ln`
 - `--alert-min-abs-imbalance`
 - `--alert-min-gas-used`
 - `--alert-min-gas-ln-swap-spike`
+- `--alert-burst-window-blocks`
+- `--alert-burst-min-events`
 - `--alert-cooldown-blocks`
 
 Validation baseline:
@@ -193,7 +198,8 @@ Formatting:
 - `alerts_warning`,
 - `alerts_critical`,
 - `alerts_rule_high_imbalance_high_volume`.
-- `alerts_rule_swap_gas_spike`.
+- `alerts_rule_swap_gas_spike`,
+- `alerts_rule_burst_window`.
 
 ## Troubleshooting
 No features extracted:

@@ -90,9 +90,12 @@
 - [x] Стартован Phase 9 multi-rule alerting: добавлено правило `swap_gas_spike` + threshold `--alert-min-gas-ln-swap-spike`.
 - [x] Cooldown изменен на уровень `rule+pool` вместо общего per-pool.
 - [x] Добавлен backlog Phase 9 (`docs/backlog_next_phase_09_multi_rule_alerting.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
+- [x] Реализовано burst/window правило (`burst_window`) с параметрами `--alert-burst-window-blocks`, `--alert-burst-min-events`.
+- [x] Добавлены per-rule toggles (`--alert-enable-high-imbalance-high-volume`, `--alert-enable-swap-gas-spike`, `--alert-enable-burst-window`).
+- [x] Добавлен счетчик `alerts_rule_burst_window` и обновлены alert playbooks.
 
 ### In Progress
-- [ ] Phase 9: Multi-Rule Alerting (burst/window rule, per-rule toggles).
+- [ ] Следующая итерация после закрытия Phase 9.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

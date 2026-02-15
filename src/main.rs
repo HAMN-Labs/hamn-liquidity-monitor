@@ -16,7 +16,7 @@ use sequences::transition::{SequenceEventKind, TransitionModel};
 use serde_json::{Map, Value, json};
 use validation::baseline::run_validation_set;
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
@@ -71,6 +71,15 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     enable_alerts: bool,
 
+    #[arg(long, default_value_t = true)]
+    alert_enable_high_imbalance_high_volume: bool,
+
+    #[arg(long, default_value_t = true)]
+    alert_enable_swap_gas_spike: bool,
+
+    #[arg(long, default_value_t = true)]
+    alert_enable_burst_window: bool,
+
     #[arg(long, default_value_t = 1.0)]
     alert_min_volume_ln: f64,
 
@@ -82,6 +91,12 @@ struct Cli {
 
     #[arg(long, default_value_t = 10.8)]
     alert_min_gas_ln_swap_spike: f64,
+
+    #[arg(long, default_value_t = 50)]
+    alert_burst_window_blocks: u64,
+
+    #[arg(long, default_value_t = 3)]
+    alert_burst_min_events: usize,
 
     #[arg(long, default_value_t = 20)]
     alert_cooldown_blocks: u64,
@@ -213,10 +228,15 @@ impl AlertSeverity {
 #[derive(Debug, Clone, Copy)]
 struct AlertConfig {
     enabled: bool,
+    enable_high_imbalance_high_volume: bool,
+    enable_swap_gas_spike: bool,
+    enable_burst_window: bool,
     min_volume_ln: f64,
     min_abs_imbalance: f64,
     min_gas_used: f64,
     min_gas_ln_swap_spike: f64,
+    burst_window_blocks: u64,
+    burst_min_events: usize,
     cooldown_blocks: u64,
 }
 
@@ -258,6 +278,7 @@ struct ConsumerStats {
     alerts_critical: u64,
     alerts_rule_high_imbalance_high_volume: u64,
     alerts_rule_swap_gas_spike: u64,
+    alerts_rule_burst_window: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -388,10 +409,15 @@ async fn main() -> Result<()> {
     };
     let alert_config = AlertConfig {
         enabled: cli.enable_alerts,
+        enable_high_imbalance_high_volume: cli.alert_enable_high_imbalance_high_volume,
+        enable_swap_gas_spike: cli.alert_enable_swap_gas_spike,
+        enable_burst_window: cli.alert_enable_burst_window,
         min_volume_ln: cli.alert_min_volume_ln,
         min_abs_imbalance: cli.alert_min_abs_imbalance,
         min_gas_used: cli.alert_min_gas_used,
         min_gas_ln_swap_spike: cli.alert_min_gas_ln_swap_spike,
+        burst_window_blocks: cli.alert_burst_window_blocks,
+        burst_min_events: cli.alert_burst_min_events,
         cooldown_blocks: cli.alert_cooldown_blocks,
     };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
@@ -772,6 +798,7 @@ async fn consume_pipeline(
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
     let mut last_alert_block_by_rule_pool: HashMap<String, u64> = HashMap::new();
+    let mut alert_history_by_pool: HashMap<String, VecDeque<u64>> = HashMap::new();
     let mut features_out_part = 0_u64;
     let mut features_out_records_in_part = 0_u64;
     let mut features_out_current_path: Option<String> = None;
@@ -954,11 +981,14 @@ async fn consume_pipeline(
                             let abs_imbalance = normalized.normalized_imbalance.abs();
                             let gas_used = normalized.feature.gas_used as f64;
                             let pool = normalized.feature.pool_address.clone();
+                            let mut base_alert_emitted = false;
                             let passes_high_imbalance_volume = normalized.normalized_total_volume
                                 >= alert_config.min_volume_ln
                                 && abs_imbalance >= alert_config.min_abs_imbalance
                                 && gas_used >= alert_config.min_gas_used;
-                            if passes_high_imbalance_volume {
+                            if alert_config.enable_high_imbalance_high_volume
+                                && passes_high_imbalance_volume
+                            {
                                 let kind = "high_imbalance_high_volume";
                                 let should_emit = should_emit_alert(
                                     &last_alert_block_by_rule_pool,
@@ -1031,6 +1061,7 @@ async fn consume_pipeline(
                                         &pool,
                                         block_number,
                                     );
+                                    base_alert_emitted = true;
                                 }
                             }
 
@@ -1038,7 +1069,7 @@ async fn consume_pipeline(
                                 matches!(normalized.feature.event_kind, LiquidityEventKind::Swap);
                             let passes_swap_gas_spike =
                                 is_swap && normalized.normalized_gas >= alert_config.min_gas_ln_swap_spike;
-                            if passes_swap_gas_spike {
+                            if alert_config.enable_swap_gas_spike && passes_swap_gas_spike {
                                 let kind = "swap_gas_spike";
                                 let should_emit = should_emit_alert(
                                     &last_alert_block_by_rule_pool,
@@ -1098,6 +1129,68 @@ async fn consume_pipeline(
                                         &pool,
                                         block_number,
                                     );
+                                    base_alert_emitted = true;
+                                }
+                            }
+
+                            if alert_config.enable_burst_window && base_alert_emitted {
+                                record_pool_alert_history(
+                                    &mut alert_history_by_pool,
+                                    &pool,
+                                    block_number,
+                                    alert_config.burst_window_blocks,
+                                );
+                                let burst_count = pool_alert_count_in_window(
+                                    &alert_history_by_pool,
+                                    &pool,
+                                );
+                                if burst_count >= alert_config.burst_min_events {
+                                    let kind = "burst_window";
+                                    let should_emit = should_emit_alert(
+                                        &last_alert_block_by_rule_pool,
+                                        kind,
+                                        &pool,
+                                        block_number,
+                                        alert_config.cooldown_blocks,
+                                    );
+                                    if should_emit {
+                                        let severity = AlertSeverity::Critical;
+                                        emit_event(
+                                            &output,
+                                            "alert",
+                                            vec![
+                                                ("kind", json!(kind)),
+                                                ("block", json!(block_number)),
+                                                ("severity", json!(severity.as_str())),
+                                                ("pool", json!(pool.clone())),
+                                                ("window_blocks", json!(alert_config.burst_window_blocks)),
+                                                ("events_in_window", json!(burst_count)),
+                                            ],
+                                        );
+                                        emit_metric(
+                                            &output,
+                                            "alerts",
+                                            vec![
+                                                ("block", json!(block_number)),
+                                                ("pool", json!(pool.clone())),
+                                                ("kind", json!(kind)),
+                                                ("severity", json!(severity.as_str())),
+                                                ("events_in_window", json!(burst_count)),
+                                            ],
+                                        );
+                                        stats.alerts_emitted =
+                                            stats.alerts_emitted.saturating_add(1);
+                                        stats.alerts_critical =
+                                            stats.alerts_critical.saturating_add(1);
+                                        stats.alerts_rule_burst_window =
+                                            stats.alerts_rule_burst_window.saturating_add(1);
+                                        remember_alert(
+                                            &mut last_alert_block_by_rule_pool,
+                                            kind,
+                                            &pool,
+                                            block_number,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1313,6 +1406,10 @@ fn print_runtime_metrics(
             "alerts_rule_swap_gas_spike",
             json!(consumer.alerts_rule_swap_gas_spike),
         ),
+        (
+            "alerts_rule_burst_window",
+            json!(consumer.alerts_rule_burst_window),
+        ),
         ("recognized_logs", json!(consumer.recognized_logs)),
         ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
         ("malformed_logs", json!(consumer.malformed_logs)),
@@ -1423,6 +1520,12 @@ async fn run_preflight(rpc: &RpcClient, cli: &Cli, output: &OutputConfig) -> Res
             ("enable_memory", json!(cli.enable_memory)),
             ("enable_sequences", json!(cli.enable_sequences)),
             ("enable_alerts", json!(cli.enable_alerts)),
+            (
+                "alert_enable_high_imbalance_high_volume",
+                json!(cli.alert_enable_high_imbalance_high_volume),
+            ),
+            ("alert_enable_swap_gas_spike", json!(cli.alert_enable_swap_gas_spike)),
+            ("alert_enable_burst_window", json!(cli.alert_enable_burst_window)),
             ("fetch_logs", json!(cli.fetch_logs)),
             ("receipt_limit", json!(cli.receipt_limit)),
         ],
@@ -1525,6 +1628,31 @@ fn remember_alert(
 ) {
     let key = format!("{kind}:{pool}");
     last_alert_block_by_rule_pool.insert(key, block_number);
+}
+
+fn record_pool_alert_history(
+    alert_history_by_pool: &mut HashMap<String, VecDeque<u64>>,
+    pool: &str,
+    block_number: u64,
+    window_blocks: u64,
+) {
+    let history = alert_history_by_pool.entry(pool.to_string()).or_default();
+    history.push_back(block_number);
+    let min_block = block_number.saturating_sub(window_blocks);
+    while let Some(front) = history.front() {
+        if *front < min_block {
+            history.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+fn pool_alert_count_in_window(
+    alert_history_by_pool: &HashMap<String, VecDeque<u64>>,
+    pool: &str,
+) -> usize {
+    alert_history_by_pool.get(pool).map_or(0, |h| h.len())
 }
 
 fn open_features_output_writer(

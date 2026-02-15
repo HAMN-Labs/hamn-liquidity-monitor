@@ -45,6 +45,7 @@ cargo run -- \
   - `alerts_critical`
   - `alerts_rule_high_imbalance_high_volume`
   - `alerts_rule_swap_gas_spike`
+  - `alerts_rule_burst_window`
 - `memory_metrics`:
   - `active_patterns`
   - `match_ratio`
@@ -57,7 +58,7 @@ cargo run -- \
   - `preflight_ok`
   - `preflight_warning`
 - alerting:
-  - `alert kind=high_imbalance_high_volume|swap_gas_spike severity=warning|critical ...`
+  - `alert kind=high_imbalance_high_volume|swap_gas_spike|burst_window severity=warning|critical ...`
   - `metric=alerts`
 
 ## Tuning Table
@@ -123,6 +124,14 @@ cargo run -- \
   - enable `--fetch-logs`
   - apply `--log-address` filter for impacted pool/protocol contracts.
 - Record incident with timestamp, block, tx, pool, and action taken.
+
+### Burst Window Alert Triggered
+- Treat as escalation signal for repeated alerts in short horizon.
+- Check recent sequence of alerts for the same pool and correlated market events.
+- Consider temporarily raising:
+  - `--alert-burst-min-events`
+  - `--alert-burst-window-blocks`
+- If burst is expected (known event), keep configuration and annotate incident as expected volatility.
 
 ## Shutdown
 1. Stop process gracefully.
