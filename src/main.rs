@@ -1,10 +1,12 @@
 mod features;
 mod ingestion;
+mod memory;
 
 use anyhow::Result;
 use clap::Parser;
 use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
 use ingestion::rpc::{RpcClient, RpcPolicy, extract_tx_hash};
+use memory::adaptive::{AdaptiveMemory, MatchOutcome};
 use std::cmp::min;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -32,6 +34,18 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     extract_features: bool,
+
+    #[arg(long, default_value_t = false)]
+    enable_memory: bool,
+
+    #[arg(long, default_value_t = 0.35)]
+    memory_distance_threshold: f64,
+
+    #[arg(long)]
+    memory_snapshot_in: Option<String>,
+
+    #[arg(long)]
+    memory_snapshot_out: Option<String>,
 
     #[arg(long, default_value_t = 10_000)]
     rpc_timeout_ms: u64,
@@ -73,6 +87,15 @@ async fn main() -> Result<()> {
         max_backoff_ms: cli.rpc_max_backoff_ms,
     };
     let rpc = RpcClient::new_with_policy(cli.rpc_url.clone(), policy);
+    let mut memory = if cli.enable_memory {
+        if let Some(path) = &cli.memory_snapshot_in {
+            Some(AdaptiveMemory::load_snapshot(path, cli.memory_distance_threshold)?)
+        } else {
+            Some(AdaptiveMemory::new(cli.memory_distance_threshold))
+        }
+    } else {
+        None
+    };
 
     let mut next_block = cli.start_block;
     loop {
@@ -93,7 +116,7 @@ async fn main() -> Result<()> {
         }
 
         while next_block <= target_end {
-            process_block(&rpc, &cli, next_block).await?;
+            process_block(&rpc, &cli, next_block, &mut memory).await?;
             next_block += 1;
         }
 
@@ -102,10 +125,24 @@ async fn main() -> Result<()> {
         }
     }
 
+    if let (Some(memory), Some(path)) = (&memory, &cli.memory_snapshot_out) {
+        memory.save_snapshot(path)?;
+        println!(
+            "memory_snapshot_saved path={} patterns={}",
+            path,
+            memory.pattern_count()
+        );
+    }
+
     Ok(())
 }
 
-async fn process_block(rpc: &RpcClient, cli: &Cli, block_number: u64) -> Result<()> {
+async fn process_block(
+    rpc: &RpcClient,
+    cli: &Cli,
+    block_number: u64,
+    memory: &mut Option<AdaptiveMemory>,
+) -> Result<()> {
     let mut transaction_hashes = Vec::new();
     let block = rpc.get_block_by_number(block_number, cli.full_tx).await?;
     for tx in &block.transactions {
@@ -155,7 +192,7 @@ async fn process_block(rpc: &RpcClient, cli: &Cli, block_number: u64) -> Result<
                     receipt.logs.len(),
                 );
 
-                if cli.extract_features {
+                if cli.extract_features || memory.is_some() {
                     let features = extract_features_from_receipt(&receipt);
                     println!("features_extracted={}", features.len());
                     for feature in features {
@@ -174,6 +211,24 @@ async fn process_block(rpc: &RpcClient, cli: &Cli, block_number: u64) -> Result<
                             normalized.normalized_imbalance,
                             normalized.normalized_gas,
                         );
+
+                        if let Some(memory) = memory.as_mut() {
+                            match memory.observe(&normalized) {
+                                MatchOutcome::Matched {
+                                    pattern_id,
+                                    distance,
+                                    confidence,
+                                } => {
+                                    println!(
+                                        "memory matched pattern_id={} distance={:.6} confidence={:.4}",
+                                        pattern_id, distance, confidence
+                                    );
+                                }
+                                MatchOutcome::Created { pattern_id } => {
+                                    println!("memory created pattern_id={}", pattern_id);
+                                }
+                            }
+                        }
                     }
                 }
                 fetched += 1;

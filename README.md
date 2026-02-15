@@ -73,3 +73,14 @@ cargo run -- \
   --follow \
   --poll-interval-ms 1000
 ```
+
+```bash
+# Adaptive memory (load/save snapshot)
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000010 \
+  --receipt-limit 20 \
+  --enable-memory \
+  --memory-distance-threshold 0.35 \
+  --memory-snapshot-out memory_snapshot.json
+```

@@ -1,3 +1,4 @@
 IMPLEMENTATION_PLAN.md
 target/
 .env
+memory_snapshot*.json

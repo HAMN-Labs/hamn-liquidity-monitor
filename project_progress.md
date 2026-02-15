@@ -21,9 +21,14 @@
 - [x] Добавлен парсинг признаков из `receipt.logs` и нормализация числовых фичей.
 - [x] Добавлен runtime-флаг `--extract-features` для извлечения фичей из полученных receipt.
 - [x] Добавлены unit-тесты Stage 2 (в сумме 6 тестов по проекту, все проходят).
+- [x] Реализован Stage 3 adaptive memory модуль (`src/memory/adaptive.rs`).
+- [x] Добавлены `match/new pattern` + confidence/recency обновления при `observe`.
+- [x] Добавлена snapshot сериализация памяти (`--memory-snapshot-in`, `--memory-snapshot-out`).
+- [x] Добавлена интеграция памяти в runtime через `--enable-memory`.
+- [x] Добавлены unit-тесты Stage 3, общий статус тестов: 9/9 passed.
 
 ### In Progress
-- [ ] Stage 3: определить модель паттерна и метаданные confidence/recency.
+- [ ] Stage 4: реализовать decay веса паттернов.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.
