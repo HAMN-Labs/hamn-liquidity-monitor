@@ -9,6 +9,12 @@ Current implementation supports:
 - sequence transition modeling with smoothing,
 - bounded online runtime pipeline with operational metrics.
 
+Related docs:
+- CLI flags and presets: `docs/CLI_REFERENCE.md`
+- Operational procedures: `docs/OPERATIONS_RUNBOOK.md`
+- Ready-to-run scenarios: `docs/EXAMPLES.md`
+- Frequently asked questions: `docs/FAQ.md`
+
 ## Prerequisites
 - Rust toolchain installed (`cargo`, `rustc`).
 - Access to an EVM RPC endpoint (for example Alchemy Arbitrum mainnet URL).

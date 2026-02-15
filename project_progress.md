@@ -42,6 +42,13 @@
 - [x] Добавлен детализированный план следующей итерации (`docs/NEXT_ITERATION_PLAN.md`).
 - [x] Добавлена пользовательская документация на английском (`docs/USER_GUIDE.md`).
 - [x] Обновлен `README.md` ссылками на пользовательскую документацию и план.
+- [x] Добавлен CLI-справочник на английском (`docs/CLI_REFERENCE.md`).
+- [x] Добавлен operations runbook на английском (`docs/OPERATIONS_RUNBOOK.md`).
+- [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на новые документы.
+- [x] Добавлен набор готовых сценариев запуска (`docs/EXAMPLES.md`).
+- [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на examples.
+- [x] Добавлен FAQ на английском (`docs/FAQ.md`).
+- [x] Обновлены ссылки в `README.md` и `docs/USER_GUIDE.md` на FAQ.
 
 ### In Progress
 - [ ] Подготовить следующий итерационный шаг: улучшение качества детекции на блоках с реальными DeFi-логами.

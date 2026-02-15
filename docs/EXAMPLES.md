@@ -1,0 +1,144 @@
+# HAMN Examples
+
+## 1. Minimal Connectivity Check
+Purpose: verify RPC access and basic block ingestion.
+
+```bash
+cargo run -- \
+  --start-block 1 \
+  --end-block 1
+```
+
+Expected signals:
+- `block=...`
+- no RPC errors
+
+## 2. Replay with Receipts
+Purpose: validate receipt ingestion on a fixed range.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000020 \
+  --receipt-limit 10
+```
+
+Expected signals:
+- `receipt tx=...`
+- `receipts_fetched=...` per block
+
+## 3. Feature Extraction Replay
+Purpose: ensure feature extraction path is active.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --receipt-limit 20 \
+  --extract-features
+```
+
+Expected signals:
+- `features_extracted=...`
+- `feature event=...` when matching logs exist
+
+## 4. Memory + Sequence Pipeline
+Purpose: run full model components on replay.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000200 \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences
+```
+
+Expected signals:
+- `memory_metrics ...`
+- `sequence_metrics ...`
+
+## 5. Follow Mode (Near Real-Time)
+Purpose: continuous processing with polling.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1001000 \
+  --follow \
+  --poll-interval-ms 1500 \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences
+```
+
+Expected signals:
+- continuous `block=...`
+- `runtime_metrics ...` on shutdown
+
+## 6. Backpressure Stress Profile
+Purpose: validate bounded queue behavior under tighter capacity.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000200 \
+  --receipt-limit 30 \
+  --extract-features \
+  --enable-memory \
+  --enable-sequences \
+  --pipeline-queue-capacity 2
+```
+
+Expected signals:
+- `runtime_metrics ...`
+- non-zero `avg_queue_backpressure_ms` possible under load
+
+## 7. Snapshot Load/Save Cycle
+Purpose: validate memory persistence between runs.
+
+First run (save):
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --memory-snapshot-out memory_snapshot.json
+```
+
+Second run (load):
+```bash
+cargo run -- \
+  --start-block 1000101 \
+  --end-block 1000200 \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-memory \
+  --memory-snapshot-in memory_snapshot.json \
+  --memory-snapshot-out memory_snapshot.json
+```
+
+Expected signals:
+- `memory_snapshot_saved path=... patterns=...`
+
+## 8. RPC Stability Tuning
+Purpose: improve behavior under intermittent RPC latency/errors.
+
+```bash
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000200 \
+  --receipt-limit 20 \
+  --rpc-timeout-ms 20000 \
+  --rpc-max-retries 5 \
+  --rpc-backoff-ms 300 \
+  --rpc-max-backoff-ms 5000
+```
+
+Expected signals:
+- reduced transient fetch failures
+- stable `runtime_metrics rpc_errors=...`
