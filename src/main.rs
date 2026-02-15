@@ -1,12 +1,14 @@
 mod features;
 mod ingestion;
 mod memory;
+mod sequences;
 
 use anyhow::Result;
 use clap::Parser;
 use features::extractor::{LiquidityEventKind, extract_features_from_receipt, normalize_feature};
 use ingestion::rpc::{RpcClient, RpcPolicy, extract_tx_hash};
 use memory::adaptive::{AdaptiveMemory, MatchOutcome, StabilizationConfig};
+use sequences::transition::{SequenceEventKind, TransitionModel};
 use std::cmp::min;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -34,6 +36,12 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     extract_features: bool,
+
+    #[arg(long, default_value_t = false)]
+    enable_sequences: bool,
+
+    #[arg(long, default_value_t = 0.25)]
+    sequence_smoothing_alpha: f64,
 
     #[arg(long, default_value_t = false)]
     enable_memory: bool,
@@ -129,6 +137,11 @@ async fn main() -> Result<()> {
     } else {
         None
     };
+    let mut sequences = if cli.enable_sequences {
+        Some(TransitionModel::new())
+    } else {
+        None
+    };
 
     let mut next_block = cli.start_block;
     loop {
@@ -149,7 +162,7 @@ async fn main() -> Result<()> {
         }
 
         while next_block <= target_end {
-            process_block(&rpc, &cli, next_block, &mut memory).await?;
+            process_block(&rpc, &cli, next_block, &mut memory, &mut sequences).await?;
             if let Some(memory) = memory.as_mut() {
                 let pruned = memory.stabilize(next_block);
                 let metrics = memory.metrics();
@@ -164,6 +177,33 @@ async fn main() -> Result<()> {
                     metrics.matched_observations,
                     metrics.created_observations,
                     metrics.pruned_patterns_total,
+                );
+            }
+            if let Some(sequences) = sequences.as_ref() {
+                let metrics = sequences.metrics();
+                let raw_swap_to_add = sequences.transition_probability(
+                    SequenceEventKind::Swap,
+                    SequenceEventKind::AddLiquidity,
+                );
+                let swap_to_add = sequences.smoothed_probability(
+                    SequenceEventKind::Swap,
+                    SequenceEventKind::AddLiquidity,
+                    cli.sequence_smoothing_alpha,
+                );
+                let add_to_remove = sequences.smoothed_probability(
+                    SequenceEventKind::AddLiquidity,
+                    SequenceEventKind::RemoveLiquidity,
+                    cli.sequence_smoothing_alpha,
+                );
+                println!(
+                    "sequence_metrics block={} entities={} total_transitions={} unique_transitions={} p_swap_add_raw={:.4} p_swap_add={:.4} p_add_remove={:.4}",
+                    next_block,
+                    metrics.tracked_entities,
+                    metrics.total_transitions,
+                    metrics.unique_transitions,
+                    raw_swap_to_add,
+                    swap_to_add,
+                    add_to_remove,
                 );
             }
             next_block += 1;
@@ -191,6 +231,7 @@ async fn process_block(
     cli: &Cli,
     block_number: u64,
     memory: &mut Option<AdaptiveMemory>,
+    sequences: &mut Option<TransitionModel>,
 ) -> Result<()> {
     let mut transaction_hashes = Vec::new();
     let block = rpc.get_block_by_number(block_number, cli.full_tx).await?;
@@ -241,7 +282,7 @@ async fn process_block(
                     receipt.logs.len(),
                 );
 
-                if cli.extract_features || memory.is_some() {
+                if cli.extract_features || memory.is_some() || sequences.is_some() {
                     let features = extract_features_from_receipt(&receipt);
                     println!("features_extracted={}", features.len());
                     for feature in features {
@@ -277,6 +318,19 @@ async fn process_block(
                                     println!("memory created pattern_id={}", pattern_id);
                                 }
                             }
+                        }
+
+                        if let Some(sequences) = sequences.as_mut() {
+                            let from_to_event = SequenceEventKind::from_liquidity_event(
+                                &normalized.feature.event_kind,
+                            );
+                            let entity_key = normalized.feature.pool_address.clone();
+                            sequences.observe_entity_event(entity_key, from_to_event);
+                            println!(
+                                "sequence_observe event={} key={}",
+                                from_to_event.as_str(),
+                                normalized.feature.pool_address
+                            );
                         }
                     }
                 }

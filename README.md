@@ -99,3 +99,14 @@ cargo run -- \
   --memory-min-occurrences-for-retention 2 \
   --memory-max-patterns 50000
 ```
+
+```bash
+# Sequence mapping + transition probabilities
+cargo run -- \
+  --start-block 1000000 \
+  --end-block 1000100 \
+  --receipt-limit 20 \
+  --extract-features \
+  --enable-sequences \
+  --sequence-smoothing-alpha 0.25
+```

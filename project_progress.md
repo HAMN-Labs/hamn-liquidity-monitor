@@ -30,9 +30,14 @@
 - [x] Добавлены лимиты памяти (`memory_max_patterns`) и retention ranking при переполнении.
 - [x] Добавлены runtime-метрики памяти: `active_patterns`, `match_ratio`, `churn_rate`.
 - [x] Добавлены тесты Stage 4, общий статус тестов: 12/12 passed.
+- [x] Реализован Stage 5 sequence mapping модуль (`src/sequences/transition.rs`).
+- [x] Добавлено хранение последовательностей действий по сущностям (pool-based).
+- [x] Построен transition map с online-обновлением вероятностей.
+- [x] Добавлено Laplace smoothing для редких переходов.
+- [x] Добавлены тесты Stage 5, общий статус тестов: 15/15 passed.
 
 ### In Progress
-- [ ] Stage 5: реализовать хранение последовательностей действий.
+- [ ] Stage 6: собрать ingestion -> features -> memory -> sequences pipeline hardening.
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.
