@@ -85,9 +85,14 @@
 - [x] Стартован Phase 8 online alerting: добавлены rule-based алерты (`--enable-alerts`) и threshold/cooldown параметры.
 - [x] Добавлен runtime `alert` event, metric stream `alerts` и счетчик `alerts_emitted` в `runtime_metrics`.
 - [x] Создан backlog Phase 8 (`docs/backlog_next_phase_08_online_alerting.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
+- [x] Добавлены severity levels (`warning`/`critical`) и per-rule counters для alerting.
+- [x] Добавлены alert-response playbooks в `docs/OPERATIONS_RUNBOOK.md`.
+- [x] Стартован Phase 9 multi-rule alerting: добавлено правило `swap_gas_spike` + threshold `--alert-min-gas-ln-swap-spike`.
+- [x] Cooldown изменен на уровень `rule+pool` вместо общего per-pool.
+- [x] Добавлен backlog Phase 9 (`docs/backlog_next_phase_09_multi_rule_alerting.md`) и обновлен `docs/NEXT_ITERATION_PLAN.md`.
 
 ### In Progress
-- [ ] Phase 8: Online Alerting (severity levels, per-rule counters, runbook playbooks).
+- [ ] Phase 9: Multi-Rule Alerting (burst/window rule, per-rule toggles).
 
 ### Rules
 - Каждый выполненный пункт переносить в `Completed` с датой.

@@ -64,8 +64,18 @@ cargo run -- [OPTIONS]
   Minimum absolute imbalance threshold for alert rule.
 - `--alert-min-gas-used <F64>` (default: `20000`)  
   Minimum transaction gas used threshold for alert rule.
+- `--alert-min-gas-ln-swap-spike <F64>` (default: `10.8`)  
+  Minimum normalized gas threshold for swap gas spike alerts.
 - `--alert-cooldown-blocks <U64>` (default: `20`)  
   Minimum block distance between alerts for the same pool.
+
+Severity model:
+- `warning`: alert thresholds are met.
+- `critical`: stronger signal (`volume` and `imbalance` >= 2x threshold, `gas_used` >= 1.5x threshold).
+
+Alert rules:
+- `high_imbalance_high_volume`
+- `swap_gas_spike`
 
 ## Adaptive Memory
 - `--enable-memory`  

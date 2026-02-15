@@ -7,8 +7,8 @@ Add practical online alerting on top of extracted features for operations and mo
 - [x] Add rule-based alert emission in runtime.
 - [x] Add cooldown mechanism to reduce repeated alerts for the same pool.
 - [x] Expose alert thresholds via CLI options.
-- [ ] Add alert severity levels and per-rule counters.
-- [ ] Add alert runbook section with response playbooks.
+- [x] Add alert severity levels and per-rule counters.
+- [x] Add alert runbook section with response playbooks.
 
 ## Completion Notes
 - Added `--enable-alerts` and threshold flags:
@@ -18,3 +18,6 @@ Add practical online alerting on top of extracted features for operations and mo
   - `--alert-cooldown-blocks`
 - Added `alert` runtime event and `alerts` metric stream.
 - Added `alerts_emitted` counter in `runtime_metrics`.
+- Added alert severity levels (`warning`, `critical`).
+- Added counters: `alerts_warning`, `alerts_critical`, `alerts_rule_high_imbalance_high_volume`.
+- Added runbook response playbooks in `docs/OPERATIONS_RUNBOOK.md`.

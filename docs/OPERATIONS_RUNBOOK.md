@@ -40,6 +40,11 @@ cargo run -- \
   - `avg_queue_latency_ms`
   - `rpc_errors`
   - `max_block_lag`
+  - `alerts_emitted`
+  - `alerts_warning`
+  - `alerts_critical`
+  - `alerts_rule_high_imbalance_high_volume`
+  - `alerts_rule_swap_gas_spike`
 - `memory_metrics`:
   - `active_patterns`
   - `match_ratio`
@@ -51,6 +56,9 @@ cargo run -- \
   - `preflight_started`
   - `preflight_ok`
   - `preflight_warning`
+- alerting:
+  - `alert kind=high_imbalance_high_volume|swap_gas_spike severity=warning|critical ...`
+  - `metric=alerts`
 
 ## Tuning Table
 - Goal: reduce RPC failures
@@ -65,6 +73,12 @@ cargo run -- \
 - Goal: monitoring integration
   Action: use `--log-format json --emit-metrics-json`
   Watch: `type=metric` stream ingestion in your collector
+- Goal: reduce alert noise
+  Action: increase `--alert-min-volume-ln`, `--alert-min-abs-imbalance`, `--alert-min-gas-used`, `--alert-cooldown-blocks`
+  Watch: `alerts_emitted`, `alerts_warning`
+- Goal: catch only extreme events
+  Action: keep default thresholds and treat `severity=critical` as pager signal
+  Watch: `alerts_critical`
 
 ## Incident Response
 ### High RPC Errors
@@ -94,6 +108,21 @@ cargo run -- \
 - Inspect preflight output (`preflight_warning` or preflight failure message).
 - Fix `--start-block/--end-block` relative to current chain tip.
 - Use `--skip-preflight` only for intentional dry-run behavior.
+
+### Alert Spike (Warning)
+- Validate chain context: check if spike aligns with known volatile market period.
+- Temporarily raise:
+  - `--alert-min-volume-ln`
+  - `--alert-min-abs-imbalance`
+- Increase `--alert-cooldown-blocks` for repeated pool noise.
+
+### Critical Alert Triggered
+- Inspect event payload (`tx`, `pool`, `volume_ln`, `abs_imbalance`, `gas_used`).
+- Check neighboring blocks for repeated signals from same pool.
+- If repeated critical alerts persist, switch runtime to focused mode:
+  - enable `--fetch-logs`
+  - apply `--log-address` filter for impacted pool/protocol contracts.
+- Record incident with timestamp, block, tx, pool, and action taken.
 
 ## Shutdown
 1. Stop process gracefully.

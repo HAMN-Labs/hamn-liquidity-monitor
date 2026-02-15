@@ -318,12 +318,13 @@ cargo run -- \
   --alert-min-volume-ln 1.0 \
   --alert-min-abs-imbalance 0.2 \
   --alert-min-gas-used 20000 \
+  --alert-min-gas-ln-swap-spike 10.8 \
   --alert-cooldown-blocks 20 \
   --log-format json \
   --emit-metrics-json
 ```
 
 Expected signals:
-- `alert ...` events
+- `alert kind=high_imbalance_high_volume|swap_gas_spike ...` events
 - `{"type":"metric","metric":"alerts",...}` lines
 - `runtime_metrics ... alerts_emitted=...`

@@ -57,6 +57,12 @@ Increase real detection quality on Arbitrum mainnet data and harden runtime beha
 - Expose alert controls via CLI and machine-readable events/metrics.
 - Add operator guidance for alert handling.
 
+## Phase 9: Multi-Rule Alerting
+- Extend alerting with additional independent rules.
+- Track per-rule alert counters for monitoring and tuning.
+- Add window-based burst detection rules.
+- Add per-rule configurability and rollout controls.
+
 ## Exit Criteria
 - Stable runtime in follow mode for at least 12 hours without manual restarts.
 - Non-zero feature extraction on selected DeFi-heavy ranges.

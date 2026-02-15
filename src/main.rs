@@ -80,6 +80,9 @@ struct Cli {
     #[arg(long, default_value_t = 20_000.0)]
     alert_min_gas_used: f64,
 
+    #[arg(long, default_value_t = 10.8)]
+    alert_min_gas_ln_swap_spike: f64,
+
     #[arg(long, default_value_t = 20)]
     alert_cooldown_blocks: u64,
 
@@ -193,11 +196,27 @@ struct OutputConfig {
 }
 
 #[derive(Debug, Clone, Copy)]
+enum AlertSeverity {
+    Warning,
+    Critical,
+}
+
+impl AlertSeverity {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Warning => "warning",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 struct AlertConfig {
     enabled: bool,
     min_volume_ln: f64,
     min_abs_imbalance: f64,
     min_gas_used: f64,
+    min_gas_ln_swap_spike: f64,
     cooldown_blocks: u64,
 }
 
@@ -235,6 +254,10 @@ struct ConsumerStats {
     unknown_topic_logs: u64,
     malformed_logs: u64,
     alerts_emitted: u64,
+    alerts_warning: u64,
+    alerts_critical: u64,
+    alerts_rule_high_imbalance_high_volume: u64,
+    alerts_rule_swap_gas_spike: u64,
     processing_ms_total: u128,
     queue_latency_ms_total: u128,
     max_block_lag: u64,
@@ -368,6 +391,7 @@ async fn main() -> Result<()> {
         min_volume_ln: cli.alert_min_volume_ln,
         min_abs_imbalance: cli.alert_min_abs_imbalance,
         min_gas_used: cli.alert_min_gas_used,
+        min_gas_ln_swap_spike: cli.alert_min_gas_ln_swap_spike,
         cooldown_blocks: cli.alert_cooldown_blocks,
     };
     let smoothing_alpha = cli.sequence_smoothing_alpha;
@@ -747,7 +771,7 @@ async fn consume_pipeline(
     output: OutputConfig,
 ) -> Result<ConsumerOutput> {
     let mut stats = ConsumerStats::default();
-    let mut last_alert_block_by_pool: HashMap<String, u64> = HashMap::new();
+    let mut last_alert_block_by_rule_pool: HashMap<String, u64> = HashMap::new();
     let mut features_out_part = 0_u64;
     let mut features_out_records_in_part = 0_u64;
     let mut features_out_current_path: Option<String> = None;
@@ -929,29 +953,37 @@ async fn consume_pipeline(
                         if alert_config.enabled {
                             let abs_imbalance = normalized.normalized_imbalance.abs();
                             let gas_used = normalized.feature.gas_used as f64;
-                            let passes_thresholds = normalized.normalized_total_volume
+                            let pool = normalized.feature.pool_address.clone();
+                            let passes_high_imbalance_volume = normalized.normalized_total_volume
                                 >= alert_config.min_volume_ln
                                 && abs_imbalance >= alert_config.min_abs_imbalance
                                 && gas_used >= alert_config.min_gas_used;
-                            if passes_thresholds {
-                                let pool = normalized.feature.pool_address.clone();
-                                let should_emit = match last_alert_block_by_pool.get(&pool) {
-                                    Some(last_block) => {
-                                        block_number.saturating_sub(*last_block)
-                                            >= alert_config.cooldown_blocks
-                                    }
-                                    None => true,
-                                };
+                            if passes_high_imbalance_volume {
+                                let kind = "high_imbalance_high_volume";
+                                let should_emit = should_emit_alert(
+                                    &last_alert_block_by_rule_pool,
+                                    kind,
+                                    &pool,
+                                    block_number,
+                                    alert_config.cooldown_blocks,
+                                );
                                 if should_emit {
+                                    let severity = classify_alert_severity(
+                                        normalized.normalized_total_volume,
+                                        abs_imbalance,
+                                        gas_used,
+                                        &alert_config,
+                                    );
                                     emit_event(
                                         &output,
                                         "alert",
                                         vec![
                                             (
                                                 "kind",
-                                                json!("high_imbalance_high_volume"),
+                                                json!(kind),
                                             ),
                                             ("block", json!(block_number)),
+                                            ("severity", json!(severity.as_str())),
                                             ("event", json!(event_label(&normalized.feature.event_kind))),
                                             ("tx", json!(normalized.feature.tx_hash)),
                                             ("pool", json!(pool.clone())),
@@ -975,11 +1007,97 @@ async fn consume_pipeline(
                                         vec![
                                             ("block", json!(block_number)),
                                             ("pool", json!(pool.clone())),
-                                            ("kind", json!("high_imbalance_high_volume")),
+                                            ("kind", json!(kind)),
+                                            ("severity", json!(severity.as_str())),
                                         ],
                                     );
                                     stats.alerts_emitted = stats.alerts_emitted.saturating_add(1);
-                                    last_alert_block_by_pool.insert(pool, block_number);
+                                    stats.alerts_rule_high_imbalance_high_volume = stats
+                                        .alerts_rule_high_imbalance_high_volume
+                                        .saturating_add(1);
+                                    match severity {
+                                        AlertSeverity::Warning => {
+                                            stats.alerts_warning =
+                                                stats.alerts_warning.saturating_add(1)
+                                        }
+                                        AlertSeverity::Critical => {
+                                            stats.alerts_critical =
+                                                stats.alerts_critical.saturating_add(1)
+                                        }
+                                    }
+                                    remember_alert(
+                                        &mut last_alert_block_by_rule_pool,
+                                        kind,
+                                        &pool,
+                                        block_number,
+                                    );
+                                }
+                            }
+
+                            let is_swap =
+                                matches!(normalized.feature.event_kind, LiquidityEventKind::Swap);
+                            let passes_swap_gas_spike =
+                                is_swap && normalized.normalized_gas >= alert_config.min_gas_ln_swap_spike;
+                            if passes_swap_gas_spike {
+                                let kind = "swap_gas_spike";
+                                let should_emit = should_emit_alert(
+                                    &last_alert_block_by_rule_pool,
+                                    kind,
+                                    &pool,
+                                    block_number,
+                                    alert_config.cooldown_blocks,
+                                );
+                                if should_emit {
+                                    let severity = classify_swap_gas_spike_severity(
+                                        normalized.normalized_gas,
+                                        alert_config.min_gas_ln_swap_spike,
+                                    );
+                                    emit_event(
+                                        &output,
+                                        "alert",
+                                        vec![
+                                            ("kind", json!(kind)),
+                                            ("block", json!(block_number)),
+                                            ("severity", json!(severity.as_str())),
+                                            ("event", json!(event_label(&normalized.feature.event_kind))),
+                                            ("tx", json!(normalized.feature.tx_hash)),
+                                            ("pool", json!(pool.clone())),
+                                            (
+                                                "gas_ln",
+                                                json!(round_to(normalized.normalized_gas, 6)),
+                                            ),
+                                            ("gas_used", json!(normalized.feature.gas_used)),
+                                        ],
+                                    );
+                                    emit_metric(
+                                        &output,
+                                        "alerts",
+                                        vec![
+                                            ("block", json!(block_number)),
+                                            ("pool", json!(pool.clone())),
+                                            ("kind", json!(kind)),
+                                            ("severity", json!(severity.as_str())),
+                                        ],
+                                    );
+                                    stats.alerts_emitted = stats.alerts_emitted.saturating_add(1);
+                                    stats.alerts_rule_swap_gas_spike =
+                                        stats.alerts_rule_swap_gas_spike.saturating_add(1);
+                                    match severity {
+                                        AlertSeverity::Warning => {
+                                            stats.alerts_warning =
+                                                stats.alerts_warning.saturating_add(1)
+                                        }
+                                        AlertSeverity::Critical => {
+                                            stats.alerts_critical =
+                                                stats.alerts_critical.saturating_add(1)
+                                        }
+                                    }
+                                    remember_alert(
+                                        &mut last_alert_block_by_rule_pool,
+                                        kind,
+                                        &pool,
+                                        block_number,
+                                    );
                                 }
                             }
                         }
@@ -1185,6 +1303,16 @@ fn print_runtime_metrics(
         ("receipts_processed", json!(consumer.receipts_processed)),
         ("features", json!(consumer.features_processed)),
         ("alerts_emitted", json!(consumer.alerts_emitted)),
+        ("alerts_warning", json!(consumer.alerts_warning)),
+        ("alerts_critical", json!(consumer.alerts_critical)),
+        (
+            "alerts_rule_high_imbalance_high_volume",
+            json!(consumer.alerts_rule_high_imbalance_high_volume),
+        ),
+        (
+            "alerts_rule_swap_gas_spike",
+            json!(consumer.alerts_rule_swap_gas_spike),
+        ),
         ("recognized_logs", json!(consumer.recognized_logs)),
         ("unknown_topic_logs", json!(consumer.unknown_topic_logs)),
         ("malformed_logs", json!(consumer.malformed_logs)),
@@ -1349,6 +1477,54 @@ fn value_to_text(value: &Value) -> String {
 fn round_to(value: f64, digits: usize) -> f64 {
     let multiplier = 10_f64.powi(digits as i32);
     (value * multiplier).round() / multiplier
+}
+
+fn classify_alert_severity(
+    volume_ln: f64,
+    abs_imbalance: f64,
+    gas_used: f64,
+    config: &AlertConfig,
+) -> AlertSeverity {
+    let critical = volume_ln >= config.min_volume_ln * 2.0
+        && abs_imbalance >= config.min_abs_imbalance * 2.0
+        && gas_used >= config.min_gas_used * 1.5;
+    if critical {
+        AlertSeverity::Critical
+    } else {
+        AlertSeverity::Warning
+    }
+}
+
+fn classify_swap_gas_spike_severity(gas_ln: f64, min_gas_ln_swap_spike: f64) -> AlertSeverity {
+    if gas_ln >= min_gas_ln_swap_spike + 1.0 {
+        AlertSeverity::Critical
+    } else {
+        AlertSeverity::Warning
+    }
+}
+
+fn should_emit_alert(
+    last_alert_block_by_rule_pool: &HashMap<String, u64>,
+    kind: &str,
+    pool: &str,
+    block_number: u64,
+    cooldown_blocks: u64,
+) -> bool {
+    let key = format!("{kind}:{pool}");
+    match last_alert_block_by_rule_pool.get(&key) {
+        Some(last_block) => block_number.saturating_sub(*last_block) >= cooldown_blocks,
+        None => true,
+    }
+}
+
+fn remember_alert(
+    last_alert_block_by_rule_pool: &mut HashMap<String, u64>,
+    kind: &str,
+    pool: &str,
+    block_number: u64,
+) {
+    let key = format!("{kind}:{pool}");
+    last_alert_block_by_rule_pool.insert(key, block_number);
 }
 
 fn open_features_output_writer(

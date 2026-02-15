@@ -154,6 +154,7 @@ Alerting:
 - `--alert-min-volume-ln`
 - `--alert-min-abs-imbalance`
 - `--alert-min-gas-used`
+- `--alert-min-gas-ln-swap-spike`
 - `--alert-cooldown-blocks`
 
 Validation baseline:
@@ -174,7 +175,7 @@ Important log lines:
 - `memory_snapshot_saved ...`
 - `preflight_started ...` / `preflight_ok ...`
 - `features_output_enabled ...` / `features_output_rotated ...`
-- `alert ...`
+- `alert ... severity=warning|critical`
 
 Formatting:
 - `--log-format text` prints key-value text lines.
@@ -188,7 +189,11 @@ Formatting:
 - queue backpressure and queue latency,
 - RPC error count,
 - max observed block lag,
-- `alerts_emitted`.
+- `alerts_emitted`,
+- `alerts_warning`,
+- `alerts_critical`,
+- `alerts_rule_high_imbalance_high_volume`.
+- `alerts_rule_swap_gas_spike`.
 
 ## Troubleshooting
 No features extracted:
